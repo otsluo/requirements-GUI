@@ -148,6 +148,7 @@ class RequirementsManager:
         ttk.Button(toolbar_frame, text="全选", command=self.select_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="取消选择", command=self.deselect_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="刷新列表", command=self.refresh_packages).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_frame, text="搜索包", command=self.search_package).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="安装选中", command=self.install_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="更新选中", command=self.update_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="降级选中", command=self.downgrade_selected).pack(side=tk.LEFT, padx=2)
@@ -1222,6 +1223,50 @@ class RequirementsManager:
                 self.update_status(f"保存失败: {str(e)}")
                 messagebox.showerror("错误", f"保存失败: {str(e)}")
     
+    def search_package(self):
+        """搜索包功能"""
+        # 创建搜索对话框
+        search_dialog = SearchPackageDialog(self.root)
+        if search_dialog.result:
+            package_name = search_dialog.result.strip()
+            if package_name:
+                # 检查包是否已安装
+                description = self.check_package_installed(package_name)
+                
+                # 添加包到列表
+                package = {
+                    'name': package_name,
+                    'version': '',
+                    'operator': '',
+                    'source': 'pypi',
+                    'description': description
+                }
+                self.packages.append(package)
+                self.refresh_tree()
+                self.update_status(f"已添加包: {package_name}")
+    
+    def check_package_installed(self, package_name):
+        """检查包是否已安装"""
+        try:
+            # 获取已安装的包信息
+            installed_packages = {}
+            if distributions is not None:
+                # 使用importlib.metadata或importlib_metadata
+                installed_packages = {dist.metadata['Name'].lower(): dist.version for dist in distributions()}
+            else:
+                # 回退到pkg_resources
+                installed_packages = {pkg.key: pkg.version for pkg in working_set}
+            
+            # 检查包是否已安装
+            pkg_key = package_name.lower()
+            if pkg_key in installed_packages:
+                return f"已安装: {installed_packages[pkg_key]}"
+            else:
+                return "未安装"
+        except Exception as e:
+            # 如果检查失败，返回未知状态
+            return "状态未知"
+    
     def register_drop_target(self):
         """注册拖放目标"""
         if HAS_DND:
@@ -1352,6 +1397,62 @@ class PackageDialog:
             'operator': self.operator_var.get(),
             'source': self.source_var.get()
         }
+        self.top.destroy()
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.top.destroy()
+
+
+class SearchPackageDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        self.top = tk.Toplevel(parent)
+        self.top.title("搜索包")
+        self.top.geometry("400x120")
+        self.top.transient(parent)
+        self.top.grab_set()
+        
+        # 居中显示
+        self.top.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建输入字段
+        frame = ttk.Frame(self.top)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 包名
+        ttk.Label(frame, text="包名:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.name_var = tk.StringVar()
+        entry = ttk.Entry(frame, textvariable=self.name_var, width=30)
+        entry.grid(row=0, column=1, sticky=tk.EW, pady=5)
+        entry.focus()
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=1, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="添加", command=self.ok).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
+        
+        # 配置列权重
+        frame.columnconfigure(1, weight=1)
+        
+        # 绑定回车键
+        self.top.bind("<Return>", lambda e: self.ok())
+        self.top.bind("<Escape>", lambda e: self.cancel())
+        
+        # 等待窗口关闭
+        parent.wait_window(self.top)
+        
+    def ok(self):
+        """确定按钮回调"""
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showwarning("警告", "请输入包名")
+            return
+            
+        self.result = name
         self.top.destroy()
         
     def cancel(self):
