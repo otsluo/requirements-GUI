@@ -8,6 +8,7 @@ import venv
 import shutil
 import threading
 from typing import List, Dict, Optional
+import platform
 
 # 用于获取已安装包信息
 try:
@@ -26,8 +27,8 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements GUI Manager")
-        self.root.geometry("1000x700")
+        self.root.title("Requirements 可视化管理工具")
+        self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
         self.current_file = None
@@ -45,7 +46,7 @@ class RequirementsManager:
         }
         self.current_mirror = "默认"
         # 调试窗口相关
-        self.debug_window_visible = False
+        self.debug_window_visible = True
         self.debug_text = None
         
         self.setup_ui()
@@ -62,36 +63,55 @@ class RequirementsManager:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
+        # 第一行控制区域
+        first_row_frame = ttk.Frame(control_frame)
+        first_row_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # 系统环境信息区域
+        system_frame = ttk.LabelFrame(first_row_frame, text="系统环境")
+        system_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 获取系统信息
+        system_info = f"{platform.system()} {platform.release()}"
+        architecture = platform.machine()  # 获取更准确的架构信息
+        python_version = f"Python {sys.version.split()[0]} ({platform.architecture()[0]})"
+        self.system_label = ttk.Label(system_frame, text=f"{system_info} ({architecture}) - {python_version}")
+        self.system_label.pack(side=tk.LEFT, padx=5, pady=5)
+        
         # 虚拟环境区域
-        venv_frame = ttk.LabelFrame(control_frame, text="虚拟环境")
+        venv_frame = ttk.LabelFrame(first_row_frame, text="虚拟环境")
         venv_frame.pack(side=tk.LEFT, padx=(0, 10))
         
-        ttk.Button(venv_frame, text="创建", command=self.create_venv).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(venv_frame, text="指定名称", command=self.create_named_venv).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(venv_frame, text="嵌入式", command=self.create_embed_venv).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(venv_frame, text="选择", command=self.select_venv).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(venv_frame, text="创建虚拟环境（venv）", command=self.create_venv).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(venv_frame, text="指定名称创建", command=self.create_named_venv).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(venv_frame, text="创建嵌入式", command=self.create_embed_venv).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(venv_frame, text="选择虚拟环境", command=self.select_venv).pack(side=tk.LEFT, padx=5, pady=5)
         self.venv_label = ttk.Label(venv_frame, text="未选择虚拟环境")
         self.venv_label.pack(side=tk.LEFT, padx=2, pady=2)
         
         # 镜像源区域
-        mirror_frame = ttk.LabelFrame(control_frame, text="镜像源")
+        mirror_frame = ttk.LabelFrame(first_row_frame, text="镜像源")
         mirror_frame.pack(side=tk.LEFT, padx=(0, 10))
         
-        ttk.Label(mirror_frame, text="镜像:").pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Label(mirror_frame, text="当前镜像:").pack(side=tk.LEFT, padx=5, pady=5)
         self.mirror_var = tk.StringVar(value=self.current_mirror)
-        mirror_combo = ttk.Combobox(mirror_frame, textvariable=self.mirror_var, width=8, state="readonly")
+        mirror_combo = ttk.Combobox(mirror_frame, textvariable=self.mirror_var, width=10, state="readonly")
         mirror_combo['values'] = list(self.mirror_sources.keys())
         mirror_combo.pack(side=tk.LEFT, padx=2, pady=2)
         mirror_combo.bind("<<ComboboxSelected>>", self.change_mirror)
         
+        # 第二行控制区域
+        second_row_frame = ttk.Frame(control_frame)
+        second_row_frame.pack(fill=tk.X, pady=(5, 0))
+        
         # 文件操作区域
-        file_frame = ttk.LabelFrame(control_frame, text="文件操作")
+        file_frame = ttk.LabelFrame(second_row_frame, text="文件操作")
         file_frame.pack(side=tk.LEFT)
         
-        ttk.Button(file_frame, text="新建", command=self.new_file).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(file_frame, text="打开", command=self.open_file).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(file_frame, text="保存", command=self.save_file).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(file_frame, text="另存", command=self.save_as_file).pack(side=tk.LEFT, padx=2, pady=2)
+        ttk.Button(file_frame, text="新建", command=self.new_file).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(file_frame, text="打开", command=self.open_file).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(file_frame, text="保存", command=self.save_file).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(file_frame, text="另存为", command=self.save_as_file).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 预设包区域
         preset_frame = ttk.LabelFrame(main_frame, text="预设包集合")
@@ -143,10 +163,9 @@ class RequirementsManager:
         scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
         scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # 调试窗口区域（默认隐藏）
+        # 调试窗口区域（默认显示）
         self.debug_frame = ttk.LabelFrame(package_frame, text="调试窗口")
-        self.debug_frame.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
-        self.debug_frame.pack_forget()  # 默认隐藏
+        self.debug_frame.pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM, pady=(10, 0))  # 默认显示
         
         self.debug_text = tk.Text(self.debug_frame, height=10, wrap=tk.WORD)
         debug_scrollbar = ttk.Scrollbar(self.debug_frame, orient=tk.VERTICAL, command=self.debug_text.yview)
@@ -158,9 +177,12 @@ class RequirementsManager:
         # 调试窗口控制按钮
         debug_control_frame = ttk.Frame(package_frame)
         debug_control_frame.pack(fill=tk.X)
-        self.debug_toggle_btn = ttk.Button(debug_control_frame, text="显示调试窗口", command=self.toggle_debug_window)
+        self.debug_toggle_btn = ttk.Button(debug_control_frame, text="隐藏调试窗口", command=self.toggle_debug_window)
         self.debug_toggle_btn.pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(debug_control_frame, text="清空调试信息", command=self.clear_debug_info).pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # 初始化调试窗口状态
+        self.debug_window_visible = True
         
         # 状态栏
         self.status_var = tk.StringVar()
@@ -213,7 +235,7 @@ class RequirementsManager:
             self.debug_window_visible = False
         else:
             # 显示调试窗口
-            self.debug_frame.pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+            self.debug_frame.pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM, pady=(10, 0))
             self.debug_toggle_btn.config(text="隐藏调试窗口")
             self.debug_window_visible = True
             
@@ -273,6 +295,7 @@ class RequirementsManager:
         """另存为requirements文件"""
         file_path = filedialog.asksaveasfilename(
             title="保存requirements文件",
+            initialfile="requirements",
             defaultextension=".txt",
             filetypes=[("Requirements files", "*.txt"), ("All files", "*.*")]
         )
@@ -338,7 +361,12 @@ class RequirementsManager:
         lines = []
         for package in self.packages:
             if package['version']:
-                line = f"{package['name']}{package['version']}"
+                # 正确处理版本操作符，确保格式为 name==version
+                if package['operator'] and package['version'].startswith(package['operator']):
+                    line = f"{package['name']}{package['version']}"
+                else:
+                    # 如果版本信息不包含操作符，则使用存储的操作符
+                    line = f"{package['name']}{package['operator']}{package['version']}"
             else:
                 line = package['name']
             lines.append(line)
@@ -360,9 +388,17 @@ class RequirementsManager:
             if 'source' not in package:
                 package['source'] = 'pypi'
                 
+            # 处理版本显示，考虑空操作符的情况
+            version_display = ''
+            if package['version']:
+                if package['operator']:
+                    version_display = package['version'].replace(package['operator'], '', 1)
+                else:
+                    version_display = package['version'].replace('==', '', 1) if package['version'].startswith('==') else package['version']
+            
             self.tree.insert("", tk.END, iid=i, values=(
                 package['name'],
-                package['version'].replace(package['operator'], '') if package['version'] else '',
+                version_display,
                 package['operator'],
                 package['source'],
                 package['description']
@@ -372,9 +408,18 @@ class RequirementsManager:
         """添加新包"""
         dialog = PackageDialog(self.root, "添加包")
         if dialog.result:
+            # 处理版本信息，考虑空操作符的情况
+            version_str = ''
+            if dialog.result['version']:
+                if dialog.result['operator']:
+                    version_str = dialog.result['operator'] + dialog.result['version']
+                else:
+                    # 如果操作符为空，默认使用==操作符
+                    version_str = '==' + dialog.result['version']
+            
             package = {
                 'name': dialog.result['name'],
-                'version': dialog.result['operator'] + dialog.result['version'] if dialog.result['version'] else '',
+                'version': version_str,
                 'operator': dialog.result['operator'],
                 'source': dialog.result['source'],
                 'description': ''
@@ -405,8 +450,14 @@ class RequirementsManager:
         idx = int(selected_items[0])
         package = self.packages[idx]
         
-        # 解析版本信息
-        version_value = package['version'].replace(package['operator'], '') if package['version'] else ''
+        # 解析版本信息，考虑空操作符的情况
+        version_value = ''
+        if package['version']:
+            if package['operator']:
+                version_value = package['version'].replace(package['operator'], '', 1)
+            else:
+                # 如果操作符为空，尝试移除默认的==操作符
+                version_value = package['version'].replace('==', '', 1) if package['version'].startswith('==') else package['version']
         
         dialog = PackageDialog(
             self.root, 
@@ -418,9 +469,18 @@ class RequirementsManager:
         )
         
         if dialog.result:
+            # 处理版本信息，考虑空操作符的情况
+            version_str = ''
+            if dialog.result['version']:
+                if dialog.result['operator']:
+                    version_str = dialog.result['operator'] + dialog.result['version']
+                else:
+                    # 如果操作符为空，默认使用==操作符
+                    version_str = '==' + dialog.result['version']
+            
             self.packages[idx] = {
                 'name': dialog.result['name'],
-                'version': dialog.result['operator'] + dialog.result['version'] if dialog.result['version'] else '',
+                'version': version_str,
                 'operator': dialog.result['operator'],
                 'source': dialog.result['source'],
                 'description': ''
@@ -669,7 +729,8 @@ class RequirementsManager:
             if process.returncode == 0:
                 self.root.after(0, lambda: self.update_status("包降级成功"))
                 self.root.after(0, lambda: self.append_debug_info("降级完成"))
-                self.root.after(0, lambda: self.refresh_packages())  # 刷新包列表以更新描述信息
+                # 重新加载包信息以确保版本信息正确更新
+                self.root.after(0, lambda: self._refresh_packages_thread())  # 刷新包列表以更新描述信息
             else:
                 self.root.after(0, lambda: self.update_status("包降级失败"))
                 self.root.after(0, lambda: self.append_debug_info(f"降级失败，返回码: {process.returncode}"))
@@ -785,7 +846,7 @@ class RequirementsManager:
             
     def show_about(self):
         """显示关于信息"""
-        messagebox.showinfo("关于", "Requirements GUI Manager\n版本: 1.0\n这是一个用于管理Python包依赖的图形界面工具")
+        messagebox.showinfo("关于", "Requirements 可视化管理工具\n版本: 0.0.1\n这是一个用于管理Python包依赖的图形界面工具\n\n作者: otsluo\n项目地址: https://github.com/otsluo/requirements-GUI/\n许可证: MIT")
 
     def create_venv(self):
         """创建默认虚拟环境"""
@@ -807,6 +868,8 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info(f"虚拟环境创建成功: {venv_dir}"))
             self.root.after(0, lambda: self.update_status("虚拟环境创建成功"))
             self.root.after(0, lambda: messagebox.showinfo("成功", f"虚拟环境创建成功: {venv_dir}"))
+            # 自动刷新包列表以显示新环境中的包
+            self.root.after(0, lambda: self.refresh_packages())
         except Exception as e:
             self.root.after(0, lambda msg=str(e): self.update_status(f"创建虚拟环境失败: {msg}"))
             self.root.after(0, lambda msg=str(e): self.append_debug_info(f"创建虚拟环境失败: {msg}"))
@@ -841,17 +904,27 @@ class RequirementsManager:
                 self.current_venv = venv_path
                 self.venv_label.config(text=f"虚拟环境: {venv_path}")
                 self.update_status(f"已选择虚拟环境: {venv_path}")
+                # 自动列出该环境中的已安装包
+                self.list_installed()
             else:
                 messagebox.showwarning("警告", "选择的目录不是有效的虚拟环境")
 
     def detect_environment(self):
         """自动检测当前环境"""
+        # 更新系统环境信息
+        system_info = f"{platform.system()} {platform.release()}"
+        architecture = platform.machine()  # 获取更准确的架构信息
+        python_version = f"Python {sys.version.split()[0]} ({platform.architecture()[0]})"
+        self.system_label.config(text=f"{system_info} ({architecture}) - {python_version}")
+        
         # 检查是否在虚拟环境中
         if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
             # 在虚拟环境中
             self.current_venv = sys.prefix
             self.venv_label.config(text=f"虚拟环境: {sys.prefix}")
             self.update_status("检测到虚拟环境")
+            # 自动列出该环境中的已安装包
+            self.list_installed()
             return
 
         # 检查当前目录下是否有虚拟环境
@@ -862,6 +935,8 @@ class RequirementsManager:
                 self.current_venv = venv_path
                 self.venv_label.config(text=f"虚拟环境: {venv_path}")
                 self.update_status(f"检测到本地虚拟环境: {venv_name}")
+                # 自动列出该环境中的已安装包
+                self.list_installed()
                 return
 
         # 检查是否为嵌入式Python环境
@@ -1015,16 +1090,23 @@ class RequirementsManager:
                 packages_data = []
                 for line in output_lines[2:]:
                     if line.strip():
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            package_info = {
-                                'name': parts[0],
-                                'version': parts[1],
-                                'operator': '==',
-                                'source': 'pypi',
-                                'description': '已安装'
-                            }
-                            packages_data.append(package_info)
+                        # 过滤掉非包信息行（如notice信息）
+                        if not line.startswith("[") and not line.startswith("WARNING"):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                # 确保包名和版本号是有效的
+                                name = parts[0]
+                                version = parts[1]
+                                # 检查包名是否包含非法字符
+                                if "=" not in name and " " not in name:
+                                    package_info = {
+                                        'name': name,
+                                        'version': version,
+                                        'operator': '==',
+                                        'source': 'pypi',
+                                        'description': '已安装'
+                                    }
+                                    packages_data.append(package_info)
                 
                 # 更新显示
                 self.root.after(0, lambda: setattr(self, 'packages', packages_data))
@@ -1062,7 +1144,11 @@ class RequirementsManager:
                 
                 for package in self.packages:
                     if include_version and package['version']:
-                        line = f"{package['name']}{package['operator']}{package['version']}"
+                        # 如果操作符为空，则只使用包名和版本号
+                        if package['operator']:
+                            line = f"{package['name']}{package['operator']}{package['version']}"
+                        else:
+                            line = f"{package['name']}=={package['version']}"  # 默认使用==
                     else:
                         line = package['name']
                     lines.append(line)

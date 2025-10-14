@@ -8,13 +8,13 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="requirements-gui",
-    version="1.0.0",
-    author="Python Developer",
-    author_email="developer@example.com",
+    version="0.0.1",
+    author="otsluo",
+    author_email="",
     description="A GUI tool for managing Python requirements",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/requirements-gui",
+    url="https://github.com/otsluo/requirements-GUI/",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

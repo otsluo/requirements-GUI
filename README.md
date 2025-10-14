@@ -31,7 +31,7 @@
 ### 方法二：使用pip安装
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/requirements-gui.git
+git clone https://github.com/otsluo/requirements-GUI.git
 cd requirements-gui
 
 # 安装依赖
@@ -44,8 +44,8 @@ python requirements_gui.py
 ### 方法三：开发者安装
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/requirements-gui.git
-cd requirements-gui
+git clone https://github.com/otsluo/requirements-GUI.git
+cd requirements-GUI
 
 # 开发者模式安装
 pip install -e .
@@ -173,7 +173,7 @@ requests[security]==2.28.1
 
 MIT License
 
-Copyright (c) 2023 Python Developer
+Copyright (c) 2023 otsluo
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
