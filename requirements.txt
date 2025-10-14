@@ -1,0 +1,4 @@
+# Requirements GUI Manager dependencies
+
+# For Python < 3.8, uncomment the following line:
+# importlib-metadata>=1.0.0
