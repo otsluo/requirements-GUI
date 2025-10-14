@@ -1,4 +1,4 @@
-# Requirements GUI Manager
+# Requirements GUI-可视化管理工具
 
 一个用于管理Python项目依赖的图形界面工具，支持所有pip requirements的功能。
 

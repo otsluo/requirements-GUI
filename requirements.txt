@@ -2,3 +2,6 @@
 
 # For Python < 3.8, uncomment the following line:
 # importlib-metadata>=1.0.0
+
+# For drag and drop functionality
+tkinterdnd2>=0.3.0

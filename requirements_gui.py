@@ -10,6 +10,14 @@ import threading
 from typing import List, Dict, Optional
 import platform
 
+# 尝试导入tkinterdnd2以支持拖放功能
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+    print("未安装tkinterdnd2库，拖放功能不可用。请运行: pip install tkinterdnd2")
+
 # 用于获取已安装包信息
 try:
     # Python 3.8+
@@ -27,7 +35,7 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements 可视化管理工具")
+        self.root.title("Requirements GUI-可视化管理工具 v0.0.1")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -53,6 +61,9 @@ class RequirementsManager:
         self.create_menu()
         # 自动检测环境
         self.detect_environment()
+        
+        # 注册拖放事件（如果支持）
+        self.register_drop_target()
         
     def setup_ui(self):
         # 创建主框架
@@ -105,7 +116,7 @@ class RequirementsManager:
         second_row_frame.pack(fill=tk.X, pady=(5, 0))
         
         # 文件操作区域
-        file_frame = ttk.LabelFrame(second_row_frame, text="文件操作")
+        file_frame = ttk.LabelFrame(second_row_frame, text="requirements文件操作")
         file_frame.pack(side=tk.LEFT)
         
         ttk.Button(file_frame, text="新建", command=self.new_file).pack(side=tk.LEFT, padx=5, pady=5)
@@ -846,7 +857,53 @@ class RequirementsManager:
             
     def show_about(self):
         """显示关于信息"""
-        messagebox.showinfo("关于", "Requirements 可视化管理工具\n版本: 0.0.1\n这是一个用于管理Python包依赖的图形界面工具\n\n作者: otsluo\n项目地址: https://github.com/otsluo/requirements-GUI/\n许可证: MIT")
+        # 创建一个带按钮的关于对话框
+        about_dialog = tk.Toplevel(self.root)
+        about_dialog.title("关于")
+        about_dialog.geometry("400x250")
+        about_dialog.resizable(False, False)
+        
+        # 居中显示对话框
+        about_dialog.transient(self.root)
+        about_dialog.grab_set()
+        
+        # 创建标签框架用于显示信息
+        info_frame = ttk.Frame(about_dialog)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 显示软件信息
+        ttk.Label(info_frame, text="Requirements GUI-可视化管理工具", font=("微软雅黑", 12, "bold")).pack(pady=(0, 5))
+        ttk.Label(info_frame, text="版本: 0.0.1").pack(pady=2)
+        ttk.Label(info_frame, text="这是一个用于管理Python包依赖的图形界面工具", wraplength=350).pack(pady=2)
+        ttk.Label(info_frame, text="作者: otsluo").pack(pady=2)
+        
+        # 添加项目地址按钮
+        ttk.Label(info_frame, text="项目地址:").pack(pady=(10, 5))
+        project_url = "https://github.com/otsluo/requirements-GUI/"
+        url_button = ttk.Button(info_frame, text=project_url, command=lambda: self.open_url(project_url), width=40)
+        url_button.pack(pady=2)
+        
+        ttk.Label(info_frame, text="许可证: MIT").pack(pady=(10, 5))
+        
+        # 添加按钮框架
+        button_frame = ttk.Frame(about_dialog)
+        button_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
+        
+        ttk.Button(button_frame, text="关闭", command=about_dialog.destroy).pack(side=tk.RIGHT)
+        
+        # 居中对话框
+        about_dialog.update_idletasks()
+        x = (about_dialog.winfo_screenwidth() // 2) - (about_dialog.winfo_width() // 2)
+        y = (about_dialog.winfo_screenheight() // 2) - (about_dialog.winfo_height() // 2)
+        about_dialog.geometry(f"+{x}+{y}")
+
+    def open_url(self, url):
+        """在浏览器中打开URL"""
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开链接: {str(e)}")
 
     def create_venv(self):
         """创建默认虚拟环境"""
@@ -1164,6 +1221,64 @@ class RequirementsManager:
             except Exception as e:
                 self.update_status(f"保存失败: {str(e)}")
                 messagebox.showerror("错误", f"保存失败: {str(e)}")
+    
+    def register_drop_target(self):
+        """注册拖放目标"""
+        if HAS_DND:
+            # 注册文件拖放事件
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self.on_drop)
+            # 添加视觉反馈
+            self.root.dnd_bind('<<DragEnter>>', self.on_drag_enter)
+            self.root.dnd_bind('<<DragLeave>>', self.on_drag_leave)
+    
+    def on_drag_enter(self, event):
+        """拖拽进入窗口时的处理"""
+        # 改变光标以提供视觉反馈
+        self.root.configure(cursor="copy")
+        self.update_status("拖入文件以导入requirements.txt")
+    
+    def on_drag_leave(self, event):
+        """拖拽离开窗口时的处理"""
+        # 恢复光标
+        self.root.configure(cursor="")
+        self.update_status("就绪")
+    
+    def on_drop(self, event):
+        """处理文件拖放事件"""
+        # 恢复光标
+        self.root.configure(cursor="")
+        
+        try:
+            # 获取拖放的文件路径
+            file_path = event.data
+            
+            # 如果是多个文件，只处理第一个
+            if isinstance(file_path, str):
+                # 移除花括号（如果有）
+                if file_path.startswith('{') and file_path.endswith('}'):
+                    file_path = file_path[1:-1]
+                
+                # 检查文件扩展名
+                if file_path.lower().endswith('.txt') or 'requirements' in file_path.lower():
+                    # 打开并解析文件
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    self.current_file = file_path
+                    self.parse_requirements(content)
+                    self.refresh_tree()
+                    self.update_status(f"已通过拖放导入文件: {file_path}")
+                else:
+                    messagebox.showwarning("警告", "请拖放requirements.txt文件")
+                    self.update_status("拖放的文件不是requirements.txt文件")
+            else:
+                messagebox.showwarning("警告", "请拖放单个文件")
+                self.update_status("拖放了多个文件")
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"拖放文件处理失败: {str(e)}")
+            self.update_status(f"拖放文件处理失败: {str(e)}")
 
 
 class PackageDialog:
@@ -1245,8 +1360,18 @@ class PackageDialog:
 
 
 def main():
-    root = tk.Tk()
+    # 如果支持拖放功能，则使用TkinterDnD创建根窗口
+    if HAS_DND:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
+    
     app = RequirementsManager(root)
+    
+    # 如果支持拖放功能，则注册拖放事件
+    if HAS_DND:
+        app.register_drop_target()
+    
     root.mainloop()
 
 
