@@ -104,7 +104,7 @@ class RequirementsManager:
         mirror_frame = ttk.LabelFrame(first_row_frame, text="镜像源")
         mirror_frame.pack(side=tk.LEFT, padx=(0, 10))
         
-        ttk.Label(mirror_frame, text="当前镜像:").pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Label(mirror_frame, text="当前下载镜像源:").pack(side=tk.LEFT, padx=5, pady=5)
         self.mirror_var = tk.StringVar(value=self.current_mirror)
         mirror_combo = ttk.Combobox(mirror_frame, textvariable=self.mirror_var, width=10, state="readonly")
         mirror_combo['values'] = list(self.mirror_sources.keys())
@@ -123,6 +123,12 @@ class RequirementsManager:
         ttk.Button(file_frame, text="打开", command=self.open_file).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(file_frame, text="保存", command=self.save_file).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(file_frame, text="另存为", command=self.save_as_file).pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # 启动器创建区域
+        launcher_frame = ttk.LabelFrame(second_row_frame, text="启动器创建")
+        launcher_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(launcher_frame, text="创建启动器", command=self.create_launcher).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 预设包区域
         preset_frame = ttk.LabelFrame(main_frame, text="预设包集合")
@@ -1245,6 +1251,87 @@ class RequirementsManager:
                 self.refresh_tree()
                 self.update_status(f"已添加包: {package_name}")
     
+    def create_launcher(self):
+        """创建启动器功能"""
+        # 创建启动器对话框
+        launcher_dialog = LauncherDialog(self.root)
+        if launcher_dialog.result:
+            try:
+                # 获取结果
+                result = launcher_dialog.result
+                py_file = result['py_file']
+                env_type = result['env_type']
+                system_python_path = result['system_python_path']
+                venv_path = result['venv_path']
+                args = result['args']
+                output_file = result['output_file']
+                
+                # 处理参数
+                args_str = f" {args}" if args else ""
+                
+                # 获取相对路径
+                try:
+                    # 尝试获取相对于批处理文件的Python文件路径
+                    output_dir = os.path.dirname(os.path.abspath(output_file))
+                    py_file_relative = os.path.relpath(py_file, output_dir)
+                except:
+                    # 如果相对路径计算失败，使用原始路径
+                    py_file_relative = py_file
+                
+                # 生成批处理文件内容
+                if env_type == "venv" and venv_path:
+                    # 使用虚拟环境
+                    python_path = os.path.join(venv_path, "Scripts", "python.exe")
+                    if not os.path.exists(python_path):
+                        # 尝试Linux/Mac路径
+                        python_path = os.path.join(venv_path, "bin", "python")
+                    
+                    # 获取虚拟环境的相对路径
+                    try:
+                        output_dir = os.path.dirname(os.path.abspath(output_file))
+                        venv_relative = os.path.relpath(venv_path, output_dir)
+                        python_relative = os.path.join(venv_relative, "Scripts", "python.exe")
+                    except:
+                        python_relative = python_path
+                    
+                    # 生成虚拟环境启动脚本（简化版）
+                    bat_content = f'''@echo off
+"{python_relative}" "{py_file_relative}"{args_str}
+pause
+'''
+                else:
+                    # 使用系统Python
+                    python_cmd = system_python_path if system_python_path else "python"
+                    
+                    # 如果是系统Python，尝试简化路径
+                    if python_cmd == "python" or python_cmd.endswith("python.exe"):
+                        python_display = "python"
+                    else:
+                        # 尝试获取相对路径
+                        try:
+                            output_dir = os.path.dirname(os.path.abspath(output_file))
+                            python_display = os.path.relpath(python_cmd, output_dir)
+                        except:
+                            python_display = python_cmd
+                    
+                    # 生成系统Python启动脚本（简化版）
+                    bat_content = f'''@echo off
+{python_display} "{py_file_relative}"{args_str}
+pause
+'''
+                
+                # 写入批处理文件
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(bat_content)
+                
+                # 显示成功消息
+                messagebox.showinfo("成功", f"启动器文件已创建:\n{output_file}")
+                self.update_status(f"已创建启动器: {output_file}")
+                
+            except Exception as e:
+                messagebox.showerror("错误", f"创建启动器失败: {str(e)}")
+                self.update_status(f"创建启动器失败: {str(e)}")
+    
     def check_package_installed(self, package_name):
         """检查包是否已安装"""
         try:
@@ -1453,6 +1540,232 @@ class SearchPackageDialog:
             return
             
         self.result = name
+        self.top.destroy()
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.top.destroy()
+
+
+class LauncherDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        self.top = tk.Toplevel(parent)
+        self.top.title("创建启动器")
+        self.top.geometry("500x300")  # 增加窗口高度
+        self.top.minsize(500, 300)    # 设置最小尺寸
+        self.top.transient(parent)
+        self.top.grab_set()
+        
+        # 居中显示
+        self.top.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建输入字段
+        frame = ttk.Frame(self.top)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Python文件路径
+        ttk.Label(frame, text="Python文件:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.file_var = tk.StringVar()
+        file_frame = ttk.Frame(frame)
+        file_frame.grid(row=0, column=1, sticky=tk.EW, pady=5)
+        
+        self.file_entry = ttk.Entry(file_frame, textvariable=self.file_var, width=40)
+        self.file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(file_frame, text="浏览", command=self.browse_file).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 环境选择
+        ttk.Label(frame, text="Python环境:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.env_var = tk.StringVar(value="system")
+        env_frame = ttk.Frame(frame)
+        env_frame.grid(row=1, column=1, sticky=tk.EW, pady=5)
+        
+        ttk.Radiobutton(env_frame, text="系统Python", variable=self.env_var, value="system").pack(side=tk.LEFT)
+        ttk.Radiobutton(env_frame, text="虚拟环境", variable=self.env_var, value="venv").pack(side=tk.LEFT, padx=(10, 0))
+        
+        # 系统Python路径（默认隐藏）
+        self.system_frame = ttk.Frame(frame)
+        self.system_frame.grid(row=2, column=1, sticky=tk.EW, pady=5)
+        self.system_frame.grid_remove()  # 默认隐藏
+        
+        ttk.Label(self.system_frame, text="系统Python路径:").pack(anchor=tk.W)
+        self.system_python_var = tk.StringVar()
+        system_entry_frame = ttk.Frame(self.system_frame)
+        system_entry_frame.pack(fill=tk.X)
+        
+        self.system_python_entry = ttk.Entry(system_entry_frame, textvariable=self.system_python_var, width=40)
+        self.system_python_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(system_entry_frame, text="浏览", command=self.browse_system_python).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 虚拟环境路径（默认隐藏）
+        self.venv_frame = ttk.Frame(frame)
+        self.venv_frame.grid(row=3, column=1, sticky=tk.EW, pady=5)
+        self.venv_frame.grid_remove()  # 默认隐藏
+        
+        self.venv_var = tk.StringVar()
+        venv_entry_frame = ttk.Frame(self.venv_frame)
+        venv_entry_frame.pack(fill=tk.X)
+        
+        self.venv_entry = ttk.Entry(venv_entry_frame, textvariable=self.venv_var, width=40)
+        self.venv_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(venv_entry_frame, text="浏览", command=self.browse_venv).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 参数设置
+        ttk.Label(frame, text="参数设置:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        self.args_var = tk.StringVar()
+        args_frame = ttk.Frame(frame)
+        args_frame.grid(row=4, column=1, sticky=tk.EW, pady=5)
+        
+        self.args_entry = ttk.Entry(args_frame, textvariable=self.args_var, width=40)
+        self.args_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # 绑定环境选择变化事件
+        self.env_var.trace('w', self.on_env_change)
+        
+        # 保存位置
+        ttk.Label(frame, text="保存位置:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.output_var = tk.StringVar()
+        output_frame = ttk.Frame(frame)
+        output_frame.grid(row=5, column=1, sticky=tk.EW, pady=5)
+        
+        self.output_entry = ttk.Entry(output_frame, textvariable=self.output_var, width=40)
+        self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(output_frame, text="浏览", command=self.browse_output).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="创建", command=self.ok).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
+        
+        # 配置列权重
+        frame.columnconfigure(1, weight=1)
+        file_frame.columnconfigure(0, weight=1)
+        env_frame.columnconfigure(0, weight=1)
+        system_entry_frame.columnconfigure(0, weight=1)
+        venv_entry_frame.columnconfigure(0, weight=1)
+        args_frame.columnconfigure(0, weight=1)
+        output_frame.columnconfigure(0, weight=1)
+        
+        # 绑定回车键
+        self.top.bind("<Return>", lambda e: self.ok())
+        self.top.bind("<Escape>", lambda e: self.cancel())
+        
+        # 等待窗口关闭
+        parent.wait_window(self.top)
+        
+    def on_env_change(self, *args):
+        """环境选择变化时的处理"""
+        if self.env_var.get() == "venv":
+            self.venv_frame.grid()
+            self.system_frame.grid_remove()
+        else:
+            self.venv_frame.grid_remove()
+            self.system_frame.grid()
+            
+            # 自动获取系统Python路径
+            if not self.system_python_var.get():
+                self.system_python_var.set(self.get_system_python_path())
+            
+    def browse_file(self):
+        """浏览Python文件"""
+        file_path = filedialog.askopenfilename(
+            title="选择Python文件",
+            filetypes=[("Python文件", "*.py"), ("所有文件", "*.*")]
+        )
+        if file_path:
+            self.file_var.set(file_path)
+            # 自动设置输出文件名
+            if not self.output_var.get():
+                output_path = os.path.splitext(file_path)[0] + ".bat"
+                self.output_var.set(output_path)
+                
+    def browse_system_python(self):
+        """浏览系统Python可执行文件"""
+        python_path = filedialog.askopenfilename(
+            title="选择Python可执行文件",
+            filetypes=[("Python可执行文件", "python.exe"), ("所有文件", "*.*")]
+        )
+        if python_path:
+            self.system_python_var.set(python_path)
+            
+    def browse_venv(self):
+        """浏览虚拟环境目录"""
+        venv_path = filedialog.askdirectory(title="选择虚拟环境目录")
+        if venv_path:
+            self.venv_var.set(venv_path)
+            
+    def browse_output(self):
+        """浏览输出文件"""
+        output_path = filedialog.asksaveasfilename(
+            title="保存启动器文件",
+            defaultextension=".bat",
+            filetypes=[("批处理文件", "*.bat"), ("所有文件", "*.*")]
+        )
+        if output_path:
+            self.output_var.set(output_path)
+            
+    def get_system_python_path(self):
+        """获取系统Python路径"""
+        try:
+            # 尝试获取系统Python路径
+            result = subprocess.run([sys.executable, "-c", "import sys; print(sys.executable)"], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except:
+            pass
+            
+        # 如果无法获取，返回默认路径
+        return "python"
+        
+    def ok(self):
+        """确定按钮回调"""
+        py_file = self.file_var.get().strip()
+        if not py_file:
+            messagebox.showwarning("警告", "请选择Python文件")
+            return
+            
+        if not os.path.exists(py_file):
+            messagebox.showwarning("警告", "选择的Python文件不存在")
+            return
+            
+        output_file = self.output_var.get().strip()
+        if not output_file:
+            messagebox.showwarning("警告", "请指定保存位置")
+            return
+            
+        env_type = self.env_var.get()
+        system_python_path = self.system_python_var.get().strip() if env_type == "system" else ""
+        venv_path = self.venv_var.get().strip() if env_type == "venv" else ""
+        args = self.args_var.get().strip()
+        
+        if env_type == "system" and not system_python_path:
+            messagebox.showwarning("警告", "请指定系统Python路径")
+            return
+            
+        if env_type == "venv" and not venv_path:
+            messagebox.showwarning("警告", "请选择虚拟环境目录")
+            return
+            
+        if env_type == "venv" and not os.path.exists(venv_path):
+            messagebox.showwarning("警告", "选择的虚拟环境目录不存在")
+            return
+            
+        self.result = {
+            'py_file': py_file,
+            'env_type': env_type,
+            'system_python_path': system_python_path,
+            'venv_path': venv_path,
+            'args': args,
+            'output_file': output_file
+        }
         self.top.destroy()
         
     def cancel(self):

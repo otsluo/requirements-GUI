@@ -32,6 +32,8 @@
 ```bash
 # 克隆项目
 git clone https://github.com/otsluo/requirements-GUI.git
+# 加速镜像
+git clone https://gitcode.com/weixin_45738527/requirements-GUI.git
 cd requirements-gui
 
 # 安装依赖
@@ -104,6 +106,11 @@ pip install -e .
 - **Web开发**: 包含flask、django、fastapi、requests等Web开发常用包
 - **一键加载**: 点击对应按钮一键加载预设包集合到当前项目
 
+### 启动器创建
+- **创建启动器**: 点击菜单"文件"->"创建启动器"，为Python脚本创建Windows批处理启动文件
+- **环境选择**: 支持选择系统Python环境或指定虚拟环境来运行脚本
+- **一键生成**: 自动生成包含正确路径和环境设置的批处理文件
+
 ## 系统要求
 
 - **操作系统**: Windows 7+/macOS 10.9+/Linux (任何支持Python的系统)
@@ -172,23 +179,3 @@ requests[security]==2.28.1
 ## 许可证
 
 MIT License
-
-Copyright (c) 2023 otsluo
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
