@@ -1,0 +1,295 @@
+{
+    "presets": {
+        "ai_art": {
+            "name": "AI绘画",
+            "packages": [
+                {
+                    "name": "torch",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "torchvision",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "diffusers",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "transformers",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "accelerate",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "ai_image": {
+            "name": "AI图像",
+            "packages": [
+                {
+                    "name": "opencv-python",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "Pillow",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "scikit-image",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "albumentations",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "ai_audio": {
+            "name": "AI音频",
+            "packages": [
+                {
+                    "name": "librosa",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "soundfile",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "pydub",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "speechbrain",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "ai_video": {
+            "name": "AI视频",
+            "packages": [
+                {
+                    "name": "moviepy",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "opencv-python",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "av",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "data_science": {
+            "name": "数据科学",
+            "packages": [
+                {
+                    "name": "numpy",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "pandas",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "matplotlib",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "seaborn",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "scikit-learn",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "web_dev": {
+            "name": "Web开发",
+            "packages": [
+                {
+                    "name": "flask",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "django",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "fastapi",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "requests",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "gunicorn",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                }
+            ]
+        },
+        "123123": {
+            "name": "123123",
+            "packages": [
+                {
+                    "name": "12331",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                }
+            ]
+        },
+        "55555555": {
+            "name": "55555555",
+            "packages": [
+                {
+                    "name": "555",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                }
+            ]
+        },
+        "1231": {
+            "name": "1231",
+            "packages": [
+                {
+                    "name": "123123",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "1231312",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "12313",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "14\t123123\t12313",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        },
+        "12313": {
+            "name": "12313",
+            "packages": [
+                {
+                    "name": "11231231",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "1331",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "1323123",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "1231323",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "123213",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "1232131",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "123123",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                }
+            ]
+        }
+    }
+}

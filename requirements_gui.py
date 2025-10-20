@@ -57,6 +57,9 @@ class RequirementsManager:
         self.debug_window_visible = True
         self.debug_text = None
         
+        # 初始化预设包管理器
+        self.preset_manager = PresetManager()
+        
         self.setup_ui()
         self.create_menu()
         # 自动检测环境
@@ -125,7 +128,7 @@ class RequirementsManager:
         ttk.Button(file_frame, text="另存为", command=self.save_as_file).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 启动器创建区域
-        launcher_frame = ttk.LabelFrame(second_row_frame, text="启动器创建")
+        launcher_frame = ttk.LabelFrame(second_row_frame, text="启动器创建（bat文件启动）")
         launcher_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Button(launcher_frame, text="创建启动器", command=self.create_launcher).pack(side=tk.LEFT, padx=5, pady=5)
@@ -134,12 +137,19 @@ class RequirementsManager:
         preset_frame = ttk.LabelFrame(main_frame, text="预设包集合")
         preset_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Button(preset_frame, text="AI绘画", command=lambda: self.load_preset("ai_art")).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(preset_frame, text="AI图像", command=lambda: self.load_preset("ai_image")).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(preset_frame, text="AI音频", command=lambda: self.load_preset("ai_audio")).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(preset_frame, text="AI视频", command=lambda: self.load_preset("ai_video")).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(preset_frame, text="数据科学", command=lambda: self.load_preset("data_science")).pack(side=tk.LEFT, padx=2, pady=2)
-        ttk.Button(preset_frame, text="Web开发", command=lambda: self.load_preset("web_dev")).pack(side=tk.LEFT, padx=2, pady=2)
+        # 使用可自动换行的框架来容纳所有预设按钮
+        preset_container = ttk.Frame(preset_frame)
+        preset_container.pack(fill=tk.BOTH, expand=True)
+        
+        # 创建一个可以自动调整大小的框架来容纳预设按钮
+        preset_button_frame = ttk.Frame(preset_container)
+        preset_button_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 添加预设按钮的框架引用，方便后续更新
+        self.preset_button_frame = preset_button_frame
+        
+        # 动态创建预设按钮
+        self.create_preset_buttons()
         
         # 包管理区域
         package_frame = ttk.LabelFrame(main_frame, text="包管理")
@@ -1042,51 +1052,12 @@ class RequirementsManager:
 
     def load_preset(self, preset_type):
         """加载预设包集合"""
-        presets = {
-            "ai_art": [
-                {"name": "torch", "version": "", "operator": "", "source": "pypi"},
-                {"name": "torchvision", "version": "", "operator": "", "source": "pypi"},
-                {"name": "diffusers", "version": "", "operator": "", "source": "pypi"},
-                {"name": "transformers", "version": "", "operator": "", "source": "pypi"},
-                {"name": "accelerate", "version": "", "operator": "", "source": "pypi"}
-            ],
-            "ai_image": [
-                {"name": "opencv-python", "version": "", "operator": "", "source": "pypi"},
-                {"name": "Pillow", "version": "", "operator": "", "source": "pypi"},
-                {"name": "scikit-image", "version": "", "operator": "", "source": "pypi"},
-                {"name": "albumentations", "version": "", "operator": "", "source": "pypi"}
-            ],
-            "ai_audio": [
-                {"name": "librosa", "version": "", "operator": "", "source": "pypi"},
-                {"name": "soundfile", "version": "", "operator": "", "source": "pypi"},
-                {"name": "pydub", "version": "", "operator": "", "source": "pypi"},
-                {"name": "speechbrain", "version": "", "operator": "", "source": "pypi"}
-            ],
-            "ai_video": [
-                {"name": "moviepy", "version": "", "operator": "", "source": "pypi"},
-                {"name": "opencv-python", "version": "", "operator": "", "source": "pypi"},
-                {"name": "av", "version": "", "operator": "", "source": "pypi"},
-                {"name": "decord", "version": "", "operator": "", "source": "pypi"}
-            ],
-            "data_science": [
-                {"name": "numpy", "version": "", "operator": "", "source": "pypi"},
-                {"name": "pandas", "version": "", "operator": "", "source": "pypi"},
-                {"name": "matplotlib", "version": "", "operator": "", "source": "pypi"},
-                {"name": "seaborn", "version": "", "operator": "", "source": "pypi"},
-                {"name": "scikit-learn", "version": "", "operator": "", "source": "pypi"}
-            ],
-            "web_dev": [
-                {"name": "flask", "version": "", "operator": "", "source": "pypi"},
-                {"name": "django", "version": "", "operator": "", "source": "pypi"},
-                {"name": "fastapi", "version": "", "operator": "", "source": "pypi"},
-                {"name": "requests", "version": "", "operator": "", "source": "pypi"},
-                {"name": "gunicorn", "version": "", "operator": "", "source": "pypi"}
-            ]
-        }
+        # 使用预设包管理器加载预设
+        preset = self.preset_manager.get_preset(preset_type)
         
-        if preset_type in presets:
+        if preset:
             # 添加预设包到当前列表
-            for package in presets[preset_type]:
+            for package in preset['packages']:
                 # 检查是否已存在
                 exists = False
                 for existing_pkg in self.packages:
@@ -1098,9 +1069,90 @@ class RequirementsManager:
                     self.packages.append(package)
                     
             self.refresh_tree()
-            self.update_status(f"已加载预设包集合: {preset_type}")
+            self.update_status(f"已加载预设包集合: {preset['name']}")
         else:
             messagebox.showwarning("警告", f"未知的预设包集合: {preset_type}")
+
+    def add_new_preset(self):
+        """添加新的预设包集合"""
+        # 创建新增预设对话框
+        dialog = AddPresetDialog(self.root)
+        if dialog.result:
+            # 获取用户输入的预设名称和包列表
+            preset_name = dialog.result['name']
+            packages = dialog.result['packages']
+            
+            # 生成预设键名（使用小写并替换空格为下划线）
+            preset_key = preset_name.lower().replace(' ', '_')
+            
+            # 使用PresetManager保存新预设
+            if self.preset_manager.add_preset(preset_key, preset_name, packages):
+                # 添加预设包到当前列表
+                added_count = 0
+                for package in packages:
+                    # 检查是否已存在
+                    exists = False
+                    for existing_pkg in self.packages:
+                        if existing_pkg['name'] == package['name']:
+                            exists = True
+                            break
+                            
+                    if not exists:
+                        self.packages.append(package)
+                        added_count += 1
+                        
+                self.refresh_tree()
+                self.update_status(f"已从预设'{preset_name}'添加 {added_count} 个新包")
+                
+                # 显示成功消息
+                messagebox.showinfo("成功", f"已从预设'{preset_name}'添加 {added_count} 个新包")
+                
+                # 更新预设按钮
+                self.refresh_preset_buttons()
+            else:
+                messagebox.showerror("错误", "保存预设失败")
+
+    def create_preset_buttons(self):
+        """创建预设按钮"""
+        # 清除现有的预设按钮
+        for widget in self.preset_button_frame.winfo_children():
+            widget.destroy()
+        
+        # 获取所有预设
+        presets = self.preset_manager.get_all_presets()
+        
+        # 使用网格布局来实现自动换行，按钮向左对齐
+        row = 0
+        col = 0
+        max_cols = 8  # 每行最多显示8个按钮
+        
+        # 为每个预设创建按钮
+        for preset_key, preset_data in presets.items():
+            ttk.Button(
+                self.preset_button_frame, 
+                text=preset_data['name'], 
+                command=lambda key=preset_key: self.load_preset(key)
+            ).grid(row=row, column=col, padx=2, pady=2, sticky="w")
+            
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+        
+        # 添加"新增预设"按钮
+        ttk.Button(
+            self.preset_button_frame, 
+            text="新增预设", 
+            command=self.add_new_preset
+        ).grid(row=row, column=col, padx=2, pady=2, sticky="w")
+        
+        # 配置网格权重，使按钮能够正确左对齐
+        # 只给最后一列设置权重，让所有按钮靠左对齐
+        self.preset_button_frame.columnconfigure(max_cols-1, weight=1)
+
+    def refresh_preset_buttons(self):
+        """刷新预设按钮"""
+        self.create_preset_buttons()
 
     def select_all(self):
         """选择所有包"""
@@ -1771,6 +1823,256 @@ class LauncherDialog:
     def cancel(self):
         """取消按钮回调"""
         self.top.destroy()
+
+
+class AddPresetDialog:
+    """新增预设对话框"""
+    def __init__(self, parent):
+        self.result = None
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("新增预设")
+        self.dialog.geometry("400x300")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # 居中显示
+        self.dialog.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 预设名称
+        name_frame = ttk.Frame(self.dialog)
+        name_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(name_frame, text="预设名称:").pack(side=tk.LEFT)
+        self.name_var = tk.StringVar()
+        self.name_entry = ttk.Entry(name_frame, textvariable=self.name_var, width=30)
+        self.name_entry.pack(side=tk.LEFT, padx=5)
+        
+        # 包列表
+        list_frame = ttk.LabelFrame(self.dialog, text="包列表 (每行一个包)")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # 创建文本框和滚动条
+        text_frame = ttk.Frame(list_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.package_text = tk.Text(text_frame, height=10, width=40)
+        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.package_text.yview)
+        self.package_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.package_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 按钮区域
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.ok_button = ttk.Button(button_frame, text="确定", command=self.ok)
+        self.ok_button.pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+        
+        # 绑定ESC键到取消操作
+        self.dialog.bind("<Escape>", lambda event: self.cancel())
+        
+        # 在名称输入框中绑定回车键到确定操作
+        self.name_entry.bind("<Return>", lambda event: self.ok())
+        
+        # 在包列表文本框中绑定Ctrl+Enter到确定操作
+        self.package_text.bind("<Control-Return>", lambda event: self.ok())
+        
+        # 在包列表文本框中绑定Tab键到换行操作
+        self.package_text.bind("<Tab>", self.insert_tab)
+        
+        # 设置焦点
+        self.name_entry.focus()
+        
+        # 等待窗口关闭
+        parent.wait_window(self.dialog)
+        
+    def ok(self):
+        """确定按钮回调"""
+        name = self.name_var.get().strip()
+        packages_text = self.package_text.get(1.0, tk.END).strip()
+        
+        if not name:
+            messagebox.showwarning("警告", "请输入预设名称")
+            return
+            
+        if not packages_text:
+            messagebox.showwarning("警告", "请输入至少一个包")
+            return
+            
+        # 解析包列表
+        packages = []
+        lines = packages_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # 简单解析包名
+                package_name = line.split('==')[0].split('>=')[0].split('<=')[0].split('>')[0].split('<')[0].split('!=')[0]
+                if package_name:
+                    packages.append({
+                        'name': package_name,
+                        'version': '',
+                        'operator': '',
+                        'source': 'pypi'
+                    })
+        
+        if not packages:
+            messagebox.showwarning("警告", "未找到有效的包")
+            return
+            
+        self.result = {
+            'name': name,
+            'packages': packages
+        }
+        self.dialog.destroy()
+        
+    def insert_tab(self, event):
+        """在文本框中插入Tab字符"""
+        # 插入换行符
+        self.package_text.insert(tk.INSERT, "\n")
+        # 阻止默认的Tab行为（切换焦点）
+        return "break"
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.dialog.destroy()
+
+
+class PresetManager:
+    """预设包管理类，用于读取和写入JSON格式的预设包文件"""
+    
+    def __init__(self, presets_file="presets.json"):
+        self.presets_file = presets_file
+        self.default_presets = {
+            "ai_art": {
+                "name": "AI绘画",
+                "packages": [
+                    {"name": "torch", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "torchvision", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "diffusers", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "transformers", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "accelerate", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
+            "ai_image": {
+                "name": "AI图像",
+                "packages": [
+                    {"name": "opencv-python", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "Pillow", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "scikit-image", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "albumentations", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
+            "ai_audio": {
+                "name": "AI音频",
+                "packages": [
+                    {"name": "librosa", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "soundfile", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "pydub", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "speechbrain", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
+            "ai_video": {
+                "name": "AI视频",
+                "packages": [
+                    {"name": "moviepy", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "opencv-python", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "av", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
+            "data_science": {
+                "name": "数据科学",
+                "packages": [
+                    {"name": "numpy", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "pandas", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "matplotlib", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "seaborn", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "scikit-learn", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
+            "web_dev": {
+                "name": "Web开发",
+                "packages": [
+                    {"name": "flask", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "django", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "fastapi", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "requests", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "gunicorn", "version": "", "operator": "", "source": "pypi"}
+                ]
+            }
+        }
+        self.presets = self.load_presets()
+    
+    def load_presets(self):
+        """从JSON文件加载预设包集合"""
+        try:
+            if os.path.exists(self.presets_file):
+                with open(self.presets_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # 合并默认预设和自定义预设
+                    presets = self.default_presets.copy()
+                    if 'presets' in data:
+                        presets.update(data['presets'])
+                    return presets
+            else:
+                # 如果文件不存在，创建默认文件
+                self.save_presets(self.default_presets)
+                return self.default_presets
+        except Exception as e:
+            print(f"加载预设文件时出错: {e}")
+            return self.default_presets
+    
+    def save_presets(self, presets):
+        """将预设包集合保存到JSON文件"""
+        try:
+            data = {'presets': presets}
+            with open(self.presets_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            return True
+        except Exception as e:
+            print(f"保存预设文件时出错: {e}")
+            return False
+    
+    def add_preset(self, preset_key, preset_name, packages):
+        """添加新的预设包集合"""
+        self.presets[preset_key] = {
+            'name': preset_name,
+            'packages': packages
+        }
+        return self.save_presets(self.presets)
+    
+    def update_preset(self, preset_key, preset_name, packages):
+        """更新预设包集合"""
+        if preset_key in self.presets:
+            self.presets[preset_key] = {
+                'name': preset_name,
+                'packages': packages
+            }
+            return self.save_presets(self.presets)
+        return False
+    
+    def delete_preset(self, preset_key):
+        """删除预设包集合"""
+        if preset_key in self.presets:
+            # 不允许删除默认预设
+            if preset_key in self.default_presets:
+                return False
+            del self.presets[preset_key]
+            return self.save_presets(self.presets)
+        return False
+    
+    def get_preset(self, preset_key):
+        """获取指定的预设包集合"""
+        return self.presets.get(preset_key)
+    
+    def get_all_presets(self):
+        """获取所有预设包集合"""
+        return self.presets
+    
+    def get_preset_names(self):
+        """获取所有预设包集合的名称"""
+        return {key: preset['name'] for key, preset in self.presets.items()}
 
 
 def main():
