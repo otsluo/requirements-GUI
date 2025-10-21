@@ -172,6 +172,9 @@ class RequirementsManager:
         ttk.Button(toolbar_frame, text="列出已安装", command=self.list_installed).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="保存已安装", command=self.save_installed_as_requirements).pack(side=tk.LEFT, padx=2)
         
+        # 依赖包列表标题
+        ttk.Label(package_frame, text="依赖包列表").pack(fill=tk.X, pady=(5, 2))
+        
         # 包列表
         columns = ("名称", "版本", "操作符", "来源", "描述")
         self.tree = ttk.Treeview(package_frame, columns=columns, show="headings", height=15)
@@ -604,6 +607,11 @@ class RequirementsManager:
             self.root.after(0, lambda: self.update_status(f"正在安装包: {', '.join(packages)}"))
             cmd = self.get_pip_command() + ["install"] + packages
             
+            # 添加镜像源参数到正确位置（在install之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
+            
             self.root.after(0, lambda: self.append_debug_info(f"执行安装命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("安装过程:"))
             
@@ -681,6 +689,11 @@ class RequirementsManager:
             self.root.after(0, lambda: self.update_status(f"正在更新包: {', '.join(packages)}"))
             cmd = self.get_pip_command() + ["install", "--upgrade"] + packages
             
+            # 添加镜像源参数到正确位置（在install之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
+            
             self.root.after(0, lambda: self.append_debug_info(f"执行更新命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("更新过程:"))
             
@@ -736,6 +749,11 @@ class RequirementsManager:
         try:
             self.root.after(0, lambda: self.update_status(f"正在降级包: {', '.join(downgrade_list)}"))
             cmd = self.get_pip_command() + ["install"] + downgrade_list
+            
+            # 添加镜像源参数到正确位置（在install之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
             
             self.root.after(0, lambda: self.append_debug_info(f"执行降级命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("降级过程:"))
@@ -797,6 +815,11 @@ class RequirementsManager:
             self.root.after(0, lambda: self.update_status(f"正在卸载包: {', '.join(packages)}"))
             cmd = self.get_pip_command() + ["uninstall", "-y"] + packages
             
+            # 添加镜像源参数到正确位置（在uninstall之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
+            
             self.root.after(0, lambda: self.append_debug_info(f"执行卸载命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("卸载过程:"))
             
@@ -836,6 +859,11 @@ class RequirementsManager:
         try:
             self.root.after(0, lambda: self.update_status("正在生成requirements文件..."))
             cmd = self.get_pip_command() + ["freeze"]
+            
+            # 添加镜像源参数到正确位置（在freeze之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
             
             self.root.after(0, lambda: self.append_debug_info(f"执行生成requirements命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("生成过程:"))
@@ -1030,7 +1058,7 @@ class RequirementsManager:
         self.update_status(f"已切换到镜像源: {self.current_mirror}")
 
     def get_pip_command(self):
-        """获取pip命令，考虑虚拟环境和镜像源"""
+        """获取pip命令，考虑虚拟环境"""
         # 基础命令
         if self.current_venv:
             # 如果在虚拟环境中，使用虚拟环境的pip
@@ -1042,11 +1070,6 @@ class RequirementsManager:
         else:
             # 否则使用系统pip
             cmd = [sys.executable, "-m", "pip"]
-            
-        # 添加镜像源参数
-        mirror_url = self.mirror_sources.get(self.current_mirror, "")
-        if mirror_url:
-            cmd.extend(["-i", mirror_url])
             
         return cmd
 
@@ -1275,6 +1298,11 @@ class RequirementsManager:
             self.root.after(0, lambda: self.update_status("正在获取已安装的包列表..."))
             cmd = self.get_pip_command() + ["list"]
             
+            # 添加镜像源参数到正确位置（在list之后）
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
+            
             self.root.after(0, lambda: self.append_debug_info(f"执行列出已安装包命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("列出过程:"))
             
@@ -1313,7 +1341,7 @@ class RequirementsManager:
                                     package_info = {
                                         'name': name,
                                         'version': version,
-                                        'operator': '==',
+                                        'operator': '',  # 设置为空字符串，不在显示区使用==
                                         'source': 'pypi',
                                         'description': '已安装'
                                     }
@@ -1400,8 +1428,8 @@ class RequirementsManager:
     
     def create_launcher(self):
         """创建启动器功能"""
-        # 创建启动器对话框
-        launcher_dialog = LauncherDialog(self.root)
+        # 创建启动器对话框，传递主程序实例
+        launcher_dialog = LauncherDialog(self.root, self)
         if launcher_dialog.result:
             try:
                 # 获取结果
@@ -1561,7 +1589,7 @@ pause
 
 
 class PackageDialog:
-    def __init__(self, parent, title, name="", version="", operator="==", source="pypi"):
+    def __init__(self, parent, title, name="", version="", operator="", source="pypi"):
         self.result = None
         
         self.top = tk.Toplevel(parent)
@@ -1695,8 +1723,9 @@ class SearchPackageDialog:
 
 
 class LauncherDialog:
-    def __init__(self, parent):
+    def __init__(self, parent, main_app=None):
         self.result = None
+        self.main_app = main_app  # 保存主程序实例引用
         
         self.top = tk.Toplevel(parent)
         self.top.title("创建启动器")
@@ -1760,6 +1789,17 @@ class LauncherDialog:
         self.venv_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         ttk.Button(venv_entry_frame, text="浏览", command=self.browse_venv).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 如果主程序中有已选择的虚拟环境，则自动填充
+        if self.main_app and self.main_app.current_venv:
+            self.venv_var.set(self.main_app.current_venv)
+            # 如果已选择虚拟环境，默认选择虚拟环境选项
+            self.env_var.set("venv")
+            self.venv_frame.grid()
+            self.system_frame.grid_remove()
+        else:
+            # 自动填充系统Python路径
+            self.system_python_var.set(self.get_system_python_path())
         
         # 参数设置
         ttk.Label(frame, text="参数设置:").grid(row=4, column=0, sticky=tk.W, pady=5)

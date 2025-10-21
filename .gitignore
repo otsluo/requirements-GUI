@@ -1,6 +1,16 @@
 # 自己看
 开发.txt
 
+# 自己看-开发调试
+setup.py
+setup.bat
+build_exe.py
+build_exe.bat
+PACKAGING.md
+
+dist
+build
+RequirementsGUI.spec
 
 
 # Byte-compiled / optimized / DLL files

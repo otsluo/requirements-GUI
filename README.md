@@ -2,14 +2,20 @@
 
 一个图形化界面的Python包管理工具，支持requirements文件的创建、编辑和管理。
 
+## 界面预览
+
+![界面预览](screenshots/main_window.png)
 ## 功能特性
 
-- 图形化界面操作
-- 支持requirements文件的创建、打开、保存
-- 预设包集合功能，快速添加常用包组合
-- 包搜索和安装功能
-- 虚拟环境支持
-- 启动器创建功能
+- 图形化界面操作，简单直观
+- 支持 requirements 文件的创建、编辑、保存
+- 支持从现有环境生成 requirements 文件
+- 支持一键安装、更新、卸载包
+- 支持预设包管理，快速添加常用包
+- 支持虚拟环境管理
+- 支持拖放操作导入 requirements 文件
+- 支持导出 requirements 文件
+- 修复了镜像源参数位置问题，确保命令正确执行
 
 ## 预设包管理
 
@@ -31,6 +37,10 @@
 
 用户可以通过"新增预设"功能创建自定义预设包集合，这些预设会保存在`presets.json`文件中。
 
+### 预设复制功能
+
+所有预设（包括默认预设和自定义预设）都支持复制功能。用户可以右键点击任何预设按钮，选择"复制"选项来创建一个新的预设。复制的预设将带有"副本"后缀，用户可以在创建时修改预设名称和包列表。
+
 ### presets.json文件格式
 
 ```json
@@ -51,12 +61,25 @@
 }
 ```
 
+## 安装方法
+
+### 方法一：直接下载运行（推荐）
+
+```bash
+git clone https://github.com/otsluo/requirements-GUI.git
+```
+```bash
+# 加速镜像
+git clone https://gitcode.com/weixin_45738527/comfyui-xnantool.git
+```
+
 ## 使用方法
 
-1. 运行程序：`python requirements_gui.py`
+1. 运行程序：`python requirements_gui.py` 或双击 `start.bat`
 2. 使用预设按钮快速添加常用包组合
 3. 通过"新增预设"创建自定义预设包
 4. 使用其他功能管理Python包
+
 
 ## 系统要求
 
