@@ -1128,11 +1128,34 @@ class RequirementsManager:
         
         # 为每个预设创建按钮
         for preset_key, preset_data in presets.items():
-            ttk.Button(
+            # 创建按钮
+            button = ttk.Button(
                 self.preset_button_frame, 
                 text=preset_data['name'], 
                 command=lambda key=preset_key: self.load_preset(key)
-            ).grid(row=row, column=col, padx=2, pady=2, sticky="w")
+            )
+            button.grid(row=row, column=col, padx=2, pady=2, sticky="w")
+            
+            # 使用偏函数来解决闭包问题
+            from functools import partial
+            
+            # 创建右键菜单
+            context_menu = tk.Menu(button, tearoff=0)
+            
+            # 所有预设都支持复制功能
+            context_menu.add_command(
+                label="复制", 
+                command=partial(self.copy_preset, preset_key, preset_data)
+            )
+            
+            # 检查是否为默认预设
+            if preset_key not in self.preset_manager.default_presets:
+                # 对于自定义预设，额外提供编辑和删除功能
+                context_menu.add_command(label="编辑", command=partial(self.edit_preset, preset_key, preset_data))
+                context_menu.add_command(label="删除", command=partial(self.delete_preset, preset_key))
+            
+            # 绑定右键菜单
+            button.bind("<Button-3>", lambda e, menu=context_menu: menu.post(e.x_root, e.y_root))
             
             col += 1
             if col >= max_cols:
@@ -1153,6 +1176,78 @@ class RequirementsManager:
     def refresh_preset_buttons(self):
         """刷新预设按钮"""
         self.create_preset_buttons()
+
+    def edit_preset(self, preset_key, preset_data):
+        """编辑预设"""
+        # 创建编辑预设对话框
+        dialog = EditPresetDialog(self.root, preset_key, preset_data)
+        if dialog.result:
+            if dialog.result == "DELETE":
+                # 删除预设
+                if self.preset_manager.delete_preset(preset_key):
+                    self.refresh_preset_buttons()
+                    messagebox.showinfo("成功", f"预设'{preset_data['name']}'已删除")
+                else:
+                    messagebox.showerror("错误", "删除预设失败")
+            else:
+                # 更新预设
+                preset_name = dialog.result['name']
+                packages = dialog.result['packages']
+                
+                # 生成预设键名（使用小写并替换空格为下划线）
+                preset_key_new = preset_name.lower().replace(' ', '_')
+                
+                # 如果名称改变且新名称已存在，则提示用户
+                if preset_key_new != preset_key and preset_key_new in self.preset_manager.get_all_presets():
+                    messagebox.showwarning("警告", f"预设名称'{preset_name}'已存在")
+                    return
+                
+                # 使用PresetManager更新预设
+                if self.preset_manager.update_preset(preset_key, preset_name, packages):
+                    # 更新预设按钮
+                    self.refresh_preset_buttons()
+                    messagebox.showinfo("成功", f"预设'{preset_name}'已更新")
+                else:
+                    messagebox.showerror("错误", "更新预设失败")
+
+    def copy_preset(self, preset_key, preset_data):
+        """复制预设"""
+        # 创建新的预设名称（在原名称后添加"副本"）
+        new_name = preset_data['name'] + " 副本"
+        
+        # 创建编辑预设对话框，用于复制
+        dialog = EditPresetDialog(self.root, preset_key, {"name": new_name, "packages": preset_data['packages']})
+        if dialog.result and dialog.result != "DELETE":
+            # 获取新预设的名称和包列表
+            preset_name = dialog.result['name']
+            packages = dialog.result['packages']
+            
+            # 生成预设键名（使用小写并替换空格为下划线）
+            preset_key_new = preset_name.lower().replace(' ', '_')
+            
+            # 检查新名称是否已存在
+            if preset_key_new in self.preset_manager.get_all_presets():
+                messagebox.showwarning("警告", f"预设名称'{preset_name}'已存在")
+                return
+            
+            # 使用PresetManager添加新预设
+            if self.preset_manager.add_preset(preset_key_new, preset_name, packages):
+                # 更新预设按钮
+                self.refresh_preset_buttons()
+                messagebox.showinfo("成功", f"预设'{preset_name}'已创建")
+            else:
+                messagebox.showerror("错误", "创建预设失败")
+
+    def delete_preset(self, preset_key):
+        """删除预设"""
+        preset_data = self.preset_manager.get_preset(preset_key)
+        if preset_data:
+            if messagebox.askyesno("确认删除", f"确定要删除预设 '{preset_data['name']}' 吗？"):
+                if self.preset_manager.delete_preset(preset_key):
+                    self.refresh_preset_buttons()
+                    messagebox.showinfo("成功", f"预设'{preset_data['name']}'已删除")
+                else:
+                    messagebox.showerror("错误", "删除预设失败")
 
     def select_all(self):
         """选择所有包"""
@@ -1926,6 +2021,133 @@ class AddPresetDialog:
             'packages': packages
         }
         self.dialog.destroy()
+        
+    def insert_tab(self, event):
+        """在文本框中插入Tab字符"""
+        # 插入换行符
+        self.package_text.insert(tk.INSERT, "\n")
+        # 阻止默认的Tab行为（切换焦点）
+        return "break"
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.dialog.destroy()
+
+
+class EditPresetDialog:
+    """编辑预设对话框"""
+    def __init__(self, parent, preset_key, preset_data):
+        self.result = None
+        self.preset_key = preset_key
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("编辑预设")
+        self.dialog.geometry("400x300")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # 居中显示
+        self.dialog.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 预设名称
+        name_frame = ttk.Frame(self.dialog)
+        name_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(name_frame, text="预设名称:").pack(side=tk.LEFT)
+        self.name_var = tk.StringVar(value=preset_data['name'])
+        self.name_entry = ttk.Entry(name_frame, textvariable=self.name_var, width=30)
+        self.name_entry.pack(side=tk.LEFT, padx=5)
+        
+        # 包列表
+        list_frame = ttk.LabelFrame(self.dialog, text="包列表 (每行一个包)")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # 创建文本框和滚动条
+        text_frame = ttk.Frame(list_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.package_text = tk.Text(text_frame, height=10, width=40)
+        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.package_text.yview)
+        self.package_text.configure(yscrollcommand=scrollbar.set)
+        
+        # 填充现有包列表
+        packages_text = "\n".join([pkg['name'] for pkg in preset_data['packages']])
+        self.package_text.insert("1.0", packages_text)
+        
+        self.package_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 按钮区域
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.ok_button = ttk.Button(button_frame, text="确定", command=self.ok)
+        self.ok_button.pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.RIGHT, padx=5)
+        self.delete_button = ttk.Button(button_frame, text="删除", command=self.delete)
+        self.delete_button.pack(side=tk.LEFT, padx=5)
+        
+        # 绑定ESC键到取消操作
+        self.dialog.bind("<Escape>", lambda event: self.cancel())
+        
+        # 在名称输入框中绑定回车键到确定操作
+        self.name_entry.bind("<Return>", lambda event: self.ok())
+        
+        # 在包列表文本框中绑定Ctrl+Enter到确定操作
+        self.package_text.bind("<Control-Return>", lambda event: self.ok())
+        
+        # 在包列表文本框中绑定Tab键到换行操作
+        self.package_text.bind("<Tab>", self.insert_tab)
+        
+        # 设置焦点
+        self.name_entry.focus()
+        
+        # 等待窗口关闭
+        parent.wait_window(self.dialog)
+        
+    def ok(self):
+        """确定按钮回调"""
+        name = self.name_var.get().strip()
+        packages_text = self.package_text.get(1.0, tk.END).strip()
+        
+        if not name:
+            messagebox.showwarning("警告", "请输入预设名称")
+            return
+            
+        if not packages_text:
+            messagebox.showwarning("警告", "请输入至少一个包")
+            return
+            
+        # 解析包列表
+        packages = []
+        lines = packages_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # 简单解析包名
+                package_name = line.split('==')[0].split('>=')[0].split('<=')[0].split('>')[0].split('<')[0].split('!=')[0]
+                if package_name:
+                    packages.append({
+                        'name': package_name,
+                        'version': '',
+                        'operator': '',
+                        'source': 'pypi'
+                    })
+        
+        if not packages:
+            messagebox.showwarning("警告", "未找到有效的包")
+            return
+            
+        self.result = {
+            'name': name,
+            'packages': packages
+        }
+        self.dialog.destroy()
+        
+    def delete(self):
+        """删除按钮回调"""
+        if messagebox.askyesno("确认删除", f"确定要删除预设 '{self.name_var.get()}' 吗？"):
+            self.result = "DELETE"
+            self.dialog.destroy()
         
     def insert_tab(self, event):
         """在文本框中插入Tab字符"""
