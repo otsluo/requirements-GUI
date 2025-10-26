@@ -56,6 +56,8 @@ class RequirementsManager:
         # 调试窗口相关
         self.debug_window_visible = True
         self.debug_text = None
+        # 上次下载目录
+        self.last_download_dir = None
         
         # 初始化预设包管理器
         self.preset_manager = PresetManager()
@@ -132,6 +134,12 @@ class RequirementsManager:
         launcher_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Button(launcher_frame, text="创建启动器", command=self.create_launcher).pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # 实用功能区域
+        usage_frame = ttk.LabelFrame(second_row_frame, text="实用功能")
+        usage_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(usage_frame, text="GitHub项目下载", command=self.download_from_github).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 预设包区域
         preset_frame = ttk.LabelFrame(main_frame, text="预设包集合")
@@ -920,7 +928,30 @@ class RequirementsManager:
         ttk.Label(info_frame, text="Requirements GUI-可视化管理工具", font=("微软雅黑", 12, "bold")).pack(pady=(0, 5))
         ttk.Label(info_frame, text="版本: 0.0.1").pack(pady=2)
         ttk.Label(info_frame, text="这是一个用于管理Python包依赖的图形界面工具", wraplength=350).pack(pady=2)
-        ttk.Label(info_frame, text="作者: otsluo").pack(pady=2)
+        
+        # 添加彩蛋功能：连续点击作者名称5次触发彩蛋
+        self.click_count = 0
+        self.last_click_time = 0
+        
+        def on_author_click(event=None):
+            import time
+            current_time = time.time()
+            
+            # 如果两次点击间隔超过2秒，重置计数器
+            if current_time - self.last_click_time > 2:
+                self.click_count = 0
+                
+            self.click_count += 1
+            self.last_click_time = current_time
+            
+            # 如果点击次数达到5次，触发彩蛋
+            if self.click_count >= 5:
+                self.show_easter_egg(about_dialog)
+                self.click_count = 0  # 重置计数器
+                
+        author_label = ttk.Label(info_frame, text="作者: otsluo")
+        author_label.pack(pady=2)
+        author_label.bind("<Button-1>", on_author_click)
         
         # 添加项目地址按钮
         ttk.Label(info_frame, text="项目地址:").pack(pady=(10, 5))
@@ -941,6 +972,58 @@ class RequirementsManager:
         x = (about_dialog.winfo_screenwidth() // 2) - (about_dialog.winfo_width() // 2)
         y = (about_dialog.winfo_screenheight() // 2) - (about_dialog.winfo_height() // 2)
         about_dialog.geometry(f"+{x}+{y}")
+
+    def show_easter_egg(self, parent):
+        """显示彩蛋对话框"""
+        # 创建彩蛋对话框
+        egg_dialog = tk.Toplevel(parent)
+        egg_dialog.title("🎉 恭喜你发现彩蛋！")
+        egg_dialog.geometry("400x300")
+        egg_dialog.resizable(False, False)
+        
+        # 居中显示对话框
+        egg_dialog.transient(parent)
+        egg_dialog.grab_set()
+        
+        # 创建标签框架用于显示彩蛋内容
+        egg_frame = ttk.Frame(egg_dialog)
+        egg_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 显示彩蛋信息
+        ttk.Label(egg_frame, text="🎉 恭喜你发现隐藏彩蛋！", font=("微软雅黑", 14, "bold"), foreground="orange").pack(pady=(0, 10))
+        
+        # 添加有趣的彩蛋内容
+        ttk.Label(egg_frame, text="谢谢你使用 Requirements GUI 工具！", font=("微软雅黑", 10)).pack(pady=5)
+        ttk.Label(egg_frame, text="希望这个小工具能为你的开发工作带来便利。", wraplength=350).pack(pady=5)
+        
+        # 添加一个有趣的引用
+        quotes = [
+            "代码改变世界！",
+            "编程是一门艺术！",
+            "每个bug都是成长的机会！",
+            "保持好奇心，不断学习！",
+            "优雅的代码来自精心的设计！"
+        ]
+        
+        import random
+        quote = random.choice(quotes)
+        ttk.Label(egg_frame, text=f"「{quote}」", font=("微软雅黑", 10, "italic"), foreground="blue").pack(pady=10)
+        
+        # 添加感谢信息
+        ttk.Label(egg_frame, text="感谢你的支持与鼓励！", font=("微软雅黑", 10)).pack(pady=5)
+        ttk.Label(egg_frame, text="如果你喜欢这个工具，欢迎在GitHub上给我们一个Star⭐", wraplength=350).pack(pady=5)
+        
+        # 添加按钮框架
+        button_frame = ttk.Frame(egg_dialog)
+        button_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
+        
+        ttk.Button(button_frame, text="关闭", command=egg_dialog.destroy).pack(side=tk.RIGHT)
+        
+        # 居中对话框
+        egg_dialog.update_idletasks()
+        x = (egg_dialog.winfo_screenwidth() // 2) - (egg_dialog.winfo_width() // 2)
+        y = (egg_dialog.winfo_screenheight() // 2) - (egg_dialog.winfo_height() // 2)
+        egg_dialog.geometry(f"+{x}+{y}")
 
     def open_url(self, url):
         """在浏览器中打开URL"""
@@ -1506,6 +1589,223 @@ pause
             except Exception as e:
                 messagebox.showerror("错误", f"创建启动器失败: {str(e)}")
                 self.update_status(f"创建启动器失败: {str(e)}")
+    
+    def download_from_github(self):
+        """从GitHub下载项目功能"""
+        # 创建下载对话框，传入上次的下载目录作为默认值
+        download_dialog = DownloadDialog(self.root, default_dir=self.last_download_dir)
+        if download_dialog.result:
+            try:
+                # 获取结果
+                result = download_dialog.result
+                repo_url = result['repo_url']
+                target_dir = result['target_dir']
+                
+                # 保存本次使用的目录，用于下次默认值
+                self.last_download_dir = target_dir
+                
+                # 从GitHub URL中提取仓库名称
+                repo_name = self._extract_repo_name(repo_url)
+                if not repo_name:
+                    messagebox.showerror("错误", "无法从URL中提取仓库名称，请检查URL格式是否正确")
+                    self.update_status("URL格式错误，无法提取仓库名称")
+                    return
+                
+                # 在目标目录下创建以仓库名称命名的子目录
+                final_target_dir = os.path.join(target_dir, repo_name)
+                
+                # 检查目标目录是否已存在且不为空
+                if os.path.exists(final_target_dir) and os.path.isdir(final_target_dir):
+                    if any(os.scandir(final_target_dir)):
+                        # 目录不为空，询问用户是否继续
+                        if not messagebox.askyesno("确认", f"目标目录 '{final_target_dir}' 已存在且不为空，是否继续下载？\n注意：这可能会覆盖现有文件。"):
+                            self.update_status("用户取消了下载操作")
+                            return
+                
+                # 检查git是否可用
+                try:
+                    subprocess.run(["git", "--version"], check=True, capture_output=True)
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    messagebox.showerror("错误", "未找到Git命令，请确保已安装Git并添加到系统PATH中")
+                    self.update_status("Git未安装或未添加到PATH")
+                    return
+                
+                # 确保目标目录的父目录存在
+                parent_dir = os.path.dirname(final_target_dir)
+                if parent_dir and not os.path.exists(parent_dir):
+                    try:
+                        os.makedirs(parent_dir, exist_ok=True)
+                    except Exception as e:
+                        messagebox.showerror("错误", f"无法创建目标目录的父目录: {str(e)}")
+                        self.update_status(f"创建目录失败: {str(e)}")
+                        return
+                
+                # 执行git clone命令，显示进度
+                self.update_status(f"正在从GitHub下载项目: {repo_url}")
+                
+                # 创建进度窗口
+                progress_window = tk.Toplevel(self.root)
+                progress_window.title("下载进度")
+                progress_window.geometry("400x150")
+                progress_window.resizable(False, False)
+                progress_window.transient(self.root)
+                progress_window.grab_set()
+                
+                # 居中显示
+                progress_window.geometry("+%d+%d" % (self.root.winfo_rootx()+50, self.root.winfo_rooty()+50))
+                
+                # 创建进度条和标签
+                progress_frame = ttk.Frame(progress_window)
+                progress_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+                
+                progress_label = ttk.Label(progress_frame, text=f"正在下载: {repo_name}")
+                progress_label.pack(pady=(0, 10))
+                
+                progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", length=300, mode="indeterminate")
+                progress_bar.pack(pady=(0, 10))
+                progress_bar.start(10)  # 启动不确定模式的进度条动画
+                
+                status_label = ttk.Label(progress_frame, text="准备下载...")
+                status_label.pack()
+                
+                # 更新窗口
+                progress_window.update()
+                
+                # 在新线程中执行下载，避免阻塞UI
+                import threading
+                download_thread = threading.Thread(
+                    target=self._perform_git_clone,
+                    args=(repo_url, final_target_dir, parent_dir, progress_window, status_label),
+                    daemon=True
+                )
+                download_thread.start()
+                
+                # 等待下载完成
+                progress_window.wait_window()
+                    
+            except Exception as e:
+                messagebox.showerror("错误", f"下载过程中发生错误: {str(e)}")
+                self.update_status(f"项目下载错误: {str(e)}")
+    
+    def _perform_git_clone(self, repo_url, target_dir, parent_dir, progress_window, status_label):
+        """执行实际的git clone操作"""
+        def show_retry_dialog(error_msg):
+            """显示重试对话框"""
+            retry_result = [False]  # 使用列表来存储结果，因为内部函数无法修改外部变量
+            
+            def on_retry():
+                retry_result[0] = True
+                retry_dialog.destroy()
+                
+            def on_cancel():
+                retry_result[0] = False
+                retry_dialog.destroy()
+            
+            retry_dialog = tk.Toplevel(progress_window)
+            retry_dialog.title("下载失败")
+            retry_dialog.geometry("300x150")
+            retry_dialog.resizable(False, False)
+            retry_dialog.transient(progress_window)
+            retry_dialog.grab_set()
+            
+            # 居中显示
+            retry_dialog.geometry("+%d+%d" % (progress_window.winfo_rootx()+50, progress_window.winfo_rooty()+50))
+            
+            # 创建消息标签
+            message_frame = ttk.Frame(retry_dialog)
+            message_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+            
+            ttk.Label(message_frame, text="下载失败:", foreground="red").pack(anchor=tk.W)
+            ttk.Label(message_frame, text=error_msg[:100] + ("..." if len(error_msg) > 100 else "")).pack(anchor=tk.W, pady=(5, 10))
+            
+            # 创建按钮框架
+            button_frame = ttk.Frame(message_frame)
+            button_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            ttk.Button(button_frame, text="重试", command=on_retry).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=5)
+            
+            # 等待用户选择
+            retry_dialog.wait_window()
+            return retry_result[0]
+        
+        while True:  # 重试循环
+            try:
+                # 更新状态
+                self.root.after(0, lambda: status_label.config(text="正在连接到GitHub..."))
+                
+                # 执行git clone命令
+                process = subprocess.Popen(
+                    ["git", "clone", repo_url, target_dir],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=parent_dir if parent_dir else None,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # 实时读取输出
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        # 更新状态信息
+                        self.root.after(0, lambda: status_label.config(text=output.strip()[:50]))  # 限制文本长度
+                        
+                # 等待进程结束
+                return_code = process.poll()
+                
+                # 显示结果
+                if return_code == 0:
+                    self.root.after(0, progress_window.destroy)
+                    self.root.after(0, lambda: messagebox.showinfo("成功", f"项目已成功下载到:\n{target_dir}"))
+                    self.root.after(0, lambda: self.update_status(f"项目下载完成: {target_dir}"))
+                    break  # 成功下载，退出重试循环
+                else:
+                    # 读取错误信息
+                    stderr_output = process.stderr.read()
+                    error_msg = stderr_output.strip() if stderr_output else "未知错误"
+                    # 提供更友好的错误信息
+                    if "already exists and is not an empty directory" in error_msg:
+                        user_choice = show_retry_dialog(f"目标目录 '{target_dir}' 已存在且不为空。\n请选择一个空目录或不存在的目录进行下载。")
+                    else:
+                        user_choice = show_retry_dialog(error_msg)
+                    
+                    if not user_choice:  # 用户选择取消
+                        self.root.after(0, progress_window.destroy)
+                        self.root.after(0, lambda: self.update_status("用户取消了下载操作"))
+                        break
+                    # 如果用户选择重试，循环会继续
+                        
+            except Exception as e:
+                user_choice = show_retry_dialog(str(e))
+                
+                if not user_choice:  # 用户选择取消
+                    self.root.after(0, progress_window.destroy)
+                    self.root.after(0, lambda: self.update_status(f"项目下载错误: {str(e)}"))
+                    break
+                # 如果用户选择重试，循环会继续
+    
+    def _extract_repo_name(self, repo_url):
+        """从GitHub仓库URL中提取仓库名称"""
+        try:
+            # 移除URL末尾可能存在的.git后缀
+            if repo_url.endswith('.git'):
+                repo_url = repo_url[:-4]
+            
+            # 提取仓库名称
+            # 处理类似 https://github.com/username/repo_name 的URL
+            if 'github.com' in repo_url:
+                # 分割URL并获取最后部分
+                parts = repo_url.strip('/').split('/')
+                if len(parts) >= 2:
+                    return parts[-1]
+            
+            return None
+        except Exception:
+            return None
     
     def check_package_installed(self, package_name):
         """检查包是否已安装"""
@@ -2195,6 +2495,110 @@ class EditPresetDialog:
         self.package_text.insert(tk.INSERT, "\n")
         # 阻止默认的Tab行为（切换焦点）
         return "break"
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.dialog.destroy()
+
+
+class DownloadDialog:
+    def __init__(self, parent, default_dir=None):
+        self.result = None
+        self.download_process = None
+        self.is_downloading = False
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("从GitHub下载项目")
+        self.dialog.geometry("500x200")
+        self.dialog.minsize(500, 200)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # 居中显示
+        self.dialog.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建输入字段
+        frame = ttk.Frame(self.dialog)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # GitHub仓库URL
+        ttk.Label(frame, text="仓库URL:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.url_var = tk.StringVar()
+        url_frame = ttk.Frame(frame)
+        url_frame.grid(row=0, column=1, sticky=tk.EW, pady=5)
+        
+        self.url_entry = ttk.Entry(url_frame, textvariable=self.url_var, width=40)
+        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.url_entry.focus()
+        
+        # 示例提示
+        ttk.Label(frame, text="例如: https://github.com/username/repository.git", foreground="gray").grid(row=1, column=1, sticky=tk.W, pady=(0, 5))
+        
+        # 目标目录
+        ttk.Label(frame, text="保存位置:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.dir_var = tk.StringVar()
+        dir_frame = ttk.Frame(frame)
+        dir_frame.grid(row=2, column=1, sticky=tk.EW, pady=5)
+        
+        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.dir_var, width=40)
+        self.dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # 如果提供了默认目录，则设置
+        if default_dir:
+            self.dir_var.set(default_dir)
+        
+        ttk.Button(dir_frame, text="浏览", command=self.browse_directory).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
+        
+        self.download_btn = ttk.Button(button_frame, text="下载", command=self.ok)
+        self.download_btn.pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
+        
+        # 配置列权重
+        frame.columnconfigure(1, weight=1)
+        url_frame.columnconfigure(0, weight=1)
+        dir_frame.columnconfigure(0, weight=1)
+        
+        # 绑定回车键
+        self.dialog.bind("<Return>", lambda e: self.ok())
+        self.dialog.bind("<Escape>", lambda e: self.cancel())
+        
+        # 等待窗口关闭
+        parent.wait_window(self.dialog)
+        
+    def browse_directory(self):
+        """浏览目录"""
+        directory = filedialog.askdirectory(title="选择保存目录")
+        if directory:
+            self.dir_var.set(directory)
+            
+    def ok(self):
+        """确定按钮回调"""
+        repo_url = self.url_var.get().strip()
+        target_dir = self.dir_var.get().strip()
+        
+        if not repo_url:
+            messagebox.showwarning("警告", "请输入GitHub仓库URL")
+            return
+            
+        if not target_dir:
+            messagebox.showwarning("警告", "请选择保存位置")
+            return
+            
+        # 简单验证URL格式
+        if not repo_url.startswith("https://github.com/"):
+            if not messagebox.askyesno("确认", "URL似乎不是标准的GitHub仓库地址，是否继续？"):
+                return
+                
+        # 设置结果并关闭对话框
+        self.result = {
+            'repo_url': repo_url,
+            'target_dir': target_dir
+        }
+        self.dialog.destroy()
         
     def cancel(self):
         """取消按钮回调"""
