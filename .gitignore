@@ -12,6 +12,7 @@ PACKAGING.md
 dist
 build
 RequirementsGUI.spec
+pip更新问题说明.md
 
 
 # Byte-compiled / optimized / DLL files
