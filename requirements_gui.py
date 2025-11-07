@@ -35,7 +35,7 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements GUI-可视化管理工具 v0.0.1")
+        self.root.title("Requirements GUI-可视化管理工具 v0.4.0")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -179,6 +179,7 @@ class RequirementsManager:
         ttk.Button(toolbar_frame, text="卸载选中", command=self.uninstall_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="列出已安装", command=self.list_installed).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar_frame, text="保存已安装", command=self.save_installed_as_requirements).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_frame, text="批量操作符", command=self.batch_operator).pack(side=tk.LEFT, padx=2)
         
         # 依赖包列表标题
         ttk.Label(package_frame, text="依赖包列表").pack(fill=tk.X, pady=(5, 2))
@@ -1486,6 +1487,70 @@ class RequirementsManager:
             except Exception as e:
                 self.update_status(f"保存失败: {str(e)}")
                 messagebox.showerror("错误", f"保存失败: {str(e)}")
+                
+    def batch_operator(self):
+        """批量操作符管理"""
+        try:
+            # 创建批量操作符对话框
+            dialog = BatchOperatorDialog(self.root)
+            result = dialog.result
+            
+            # 如果用户点击了确定
+            if result:
+                operator = result['operator']
+                scope = result['scope']
+                
+                # 获取要应用操作符的包列表
+                if scope == "selected":
+                    # 仅选中项
+                    selected_items = self.tree.selection()
+                    if not selected_items:
+                        messagebox.showwarning("警告", "请至少选择一个包")
+                        return
+                    items_to_update = selected_items
+                else:
+                    # 所有项
+                    items_to_update = self.tree.get_children()
+                    if not items_to_update:
+                        messagebox.showwarning("警告", "没有包可供更新")
+                        return
+                
+                # 更新包的操作符
+                updated_count = 0
+                for item in items_to_update:
+                    # 获取当前包的信息
+                    values = self.tree.item(item, 'values')
+                    if len(values) >= 3:
+                        name = values[0]
+                        version = values[1]
+                        # 更新操作符
+                        self.tree.item(item, values=(name, version, operator))
+                        updated_count += 1
+                
+                # 更新manager中的数据
+                self._sync_manager_with_tree()
+                
+                messagebox.showinfo("成功", f"已更新{updated_count}个包的操作符为'{operator}'")
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"批量操作符设置失败: {str(e)}")
+            
+    def _sync_manager_with_tree(self):
+        """同步树形视图和manager中的数据"""
+        # 清空当前包列表
+        self.packages.clear()
+        
+        # 从树形视图中获取所有项目并重新填充包列表
+        for item in self.tree.get_children():
+            values = self.tree.item(item, 'values')
+            if len(values) >= 3:
+                package = {
+                    'name': values[0],
+                    'version': values[1],
+                    'operator': values[2],
+                    'source': values[3] if len(values) > 3 else 'pypi'
+                }
+                self.packages.append(package)
     
     def search_package(self):
         """搜索包功能"""
@@ -2499,6 +2564,76 @@ class EditPresetDialog:
     def cancel(self):
         """取消按钮回调"""
         self.dialog.destroy()
+
+
+class BatchOperatorDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        self.top = tk.Toplevel(parent)
+        self.top.title("批量操作符管理")
+        self.top.geometry("350x200")  # 进一步增加窗口大小以确保所有控件都能完整显示
+        self.top.resizable(False, False)  # 禁止调整窗口大小
+        self.top.transient(parent)
+        self.top.grab_set()
+        
+        # 居中显示
+        self.top.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建输入字段
+        frame = ttk.Frame(self.top)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+        
+        # 版本操作符
+        ttk.Label(frame, text="选择操作符:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.operator_var = tk.StringVar(value="==")
+        operator_combo = ttk.Combobox(frame, textvariable=self.operator_var, width=27)
+        operator_combo['values'] = ('==', '>=', '<=', '>', '<', '!=', '~=', '')
+        operator_combo.grid(row=0, column=1, sticky=tk.EW, pady=5)
+        operator_combo.state(['readonly'])  # 设置为只读模式
+        
+        # 应用范围
+        ttk.Label(frame, text="应用范围:").grid(row=1, column=0, sticky=tk.W, pady=10)
+        self.scope_var = tk.StringVar(value="selected")
+        scope_frame = ttk.Frame(frame)
+        scope_frame.grid(row=1, column=1, sticky=tk.EW, pady=10)
+        ttk.Radiobutton(scope_frame, text="仅选中项", variable=self.scope_var, value="selected").pack(anchor=tk.W)
+        ttk.Radiobutton(scope_frame, text="所有项", variable=self.scope_var, value="all").pack(anchor=tk.W)
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=15)
+        
+        ttk.Button(button_frame, text="确定", command=self.ok, width=10).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel, width=10).pack(side=tk.LEFT, padx=10)
+        
+        # 配置列权重
+        frame.columnconfigure(1, weight=1)
+        
+        # 绑定回车键和ESC键
+        self.top.bind("<Return>", lambda e: self.ok())
+        self.top.bind("<Escape>", lambda e: self.cancel())
+        
+        # 设置焦点到操作符下拉框
+        operator_combo.focus()
+        
+        # 确保窗口完全绘制后调整位置
+        self.top.update_idletasks()
+        
+        # 等待窗口关闭
+        parent.wait_window(self.top)
+        
+    def ok(self):
+        """确定按钮回调"""
+        self.result = {
+            'operator': self.operator_var.get(),
+            'scope': self.scope_var.get()
+        }
+        self.top.destroy()
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.top.destroy()
 
 
 class DownloadDialog:
