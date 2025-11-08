@@ -211,28 +211,6 @@
                     "description": ""
                 }
             ]
-        },
-        "11": {
-            "name": "11",
-            "packages": [
-                {
-                    "name": "11",
-                    "version": "",
-                    "operator": "",
-                    "source": "pypi"
-                }
-            ]
-        },
-        "22": {
-            "name": "22",
-            "packages": [
-                {
-                    "name": "11",
-                    "version": "",
-                    "operator": "",
-                    "source": "pypi"
-                }
-            ]
         }
     }
 }

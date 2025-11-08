@@ -35,7 +35,7 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements GUI-可视化管理工具 v0.4.0")
+        self.root.title("Requirements GUI-可视化管理工具 v0.5.0")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -100,10 +100,18 @@ class RequirementsManager:
         
         ttk.Button(venv_frame, text="创建虚拟环境（venv）", command=self.create_venv).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(venv_frame, text="指定名称创建", command=self.create_named_venv).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(venv_frame, text="创建嵌入式", command=self.create_embed_venv).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(venv_frame, text="选择虚拟环境", command=self.select_venv).pack(side=tk.LEFT, padx=5, pady=5)
         self.venv_label = ttk.Label(venv_frame, text="未选择虚拟环境")
         self.venv_label.pack(side=tk.LEFT, padx=2, pady=2)
+        
+        # 嵌入式环境区域
+        embed_frame = ttk.LabelFrame(first_row_frame, text="嵌入式环境")
+        embed_frame.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(embed_frame, text="创建嵌入式", command=self.create_embed_venv).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(embed_frame, text="选择嵌入式环境", command=self.select_embedded_venv).pack(side=tk.LEFT, padx=5, pady=5)
+        self.embed_label = ttk.Label(embed_frame, text="")
+        self.embed_label.pack(side=tk.LEFT, padx=2, pady=2)
         
         # 镜像源区域
         mirror_frame = ttk.LabelFrame(first_row_frame, text="镜像源")
@@ -1094,6 +1102,27 @@ class RequirementsManager:
                 self.list_installed()
             else:
                 messagebox.showwarning("警告", "选择的目录不是有效的虚拟环境")
+                
+    def select_embedded_venv(self):
+        """选择嵌入式环境"""
+        venv_path = filedialog.askdirectory(title="选择嵌入式环境目录")
+        if venv_path:
+            # 检查是否为有效的嵌入式环境
+            # 嵌入式环境可能没有pyvenv.cfg文件，但我们检查是否存在python可执行文件
+            python_exe = None
+            if sys.platform == "win32":
+                python_exe = os.path.join(venv_path, "python.exe")
+            else:
+                python_exe = os.path.join(venv_path, "bin", "python")
+                
+            if os.path.exists(python_exe):
+                self.current_venv = venv_path
+                self.embed_label.config(text=f"嵌入式环境: {venv_path}")
+                self.update_status(f"已选择嵌入式环境: {venv_path}")
+                # 自动列出该环境中的已安装包
+                self.list_installed()
+            else:
+                messagebox.showwarning("警告", "选择的目录不是有效的嵌入式环境")
 
     def detect_environment(self):
         """自动检测当前环境"""
@@ -1102,6 +1131,20 @@ class RequirementsManager:
         architecture = platform.machine()  # 获取更准确的架构信息
         python_version = f"Python {sys.version.split()[0]} ({platform.architecture()[0]})"
         self.system_label.config(text=f"{system_info} ({architecture}) - {python_version}")
+        
+        # 如果已经选择了环境（包括嵌入式环境），则不进行自动检测
+        if self.current_venv:
+            # 检查是否为嵌入式环境（通过标签文本判断）
+            current_text = self.embed_label.cget("text")
+            if "嵌入式环境:" in current_text:
+                self.update_status("使用已选择的嵌入式环境")
+                return
+            else:
+                # 检查虚拟环境标签
+                venv_text = self.venv_label.cget("text")
+                if "虚拟环境:" in venv_text:
+                    self.update_status("使用已选择的虚拟环境")
+                    return
         
         # 检查是否在虚拟环境中
         if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
@@ -1127,13 +1170,14 @@ class RequirementsManager:
 
         # 检查是否为嵌入式Python环境
         if "embed" in sys.executable.lower() or "embedded" in sys.executable.lower():
-            self.venv_label.config(text="嵌入式环境")
+            self.embed_label.config(text="嵌入式环境")
             self.update_status("检测到嵌入式Python环境")
             return
 
         # 未检测到特殊环境
         self.current_venv = None
         self.venv_label.config(text="未选择虚拟环境")
+        self.embed_label.config(text="")
         self.update_status("使用系统Python环境")
 
     def change_mirror(self, event=None):
@@ -1145,12 +1189,33 @@ class RequirementsManager:
         """获取pip命令，考虑虚拟环境"""
         # 基础命令
         if self.current_venv:
-            # 如果在虚拟环境中，使用虚拟环境的pip
-            if sys.platform == "win32":
-                pip_path = os.path.join(self.current_venv, "Scripts", "pip.exe")
+            # 检查当前环境标签，判断是否为嵌入式环境
+            current_text = self.embed_label.cget("text")
+            if "嵌入式环境:" in current_text:
+                # 对于嵌入式环境，直接使用python -m pip
+                python_path = os.path.join(self.current_venv, "python.exe") if sys.platform == "win32" else os.path.join(self.current_venv, "bin", "python")
+                if os.path.exists(python_path):
+                    cmd = [python_path, "-m", "pip"]
+                else:
+                    # 如果找不到python可执行文件，回退到系统pip
+                    cmd = [sys.executable, "-m", "pip"]
             else:
-                pip_path = os.path.join(self.current_venv, "bin", "pip")
-            cmd = [pip_path]
+                # 对于普通虚拟环境，使用虚拟环境的pip
+                if sys.platform == "win32":
+                    pip_path = os.path.join(self.current_venv, "Scripts", "pip.exe")
+                else:
+                    pip_path = os.path.join(self.current_venv, "bin", "pip")
+                # 检查pip是否存在
+                if os.path.exists(pip_path):
+                    cmd = [pip_path]
+                else:
+                    # 如果找不到pip，回退到python -m pip
+                    python_path = os.path.join(self.current_venv, "python.exe") if sys.platform == "win32" else os.path.join(self.current_venv, "bin", "python")
+                    if os.path.exists(python_path):
+                        cmd = [python_path, "-m", "pip"]
+                    else:
+                        # 如果都找不到，回退到系统pip
+                        cmd = [sys.executable, "-m", "pip"]
         else:
             # 否则使用系统pip
             cmd = [sys.executable, "-m", "pip"]
