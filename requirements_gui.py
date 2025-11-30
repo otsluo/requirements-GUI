@@ -47,6 +47,7 @@ class RequirementsManager:
         # 镜像源配置
         self.mirror_sources = {
             "默认": "",
+            "官方": "https://pypi.org/simple/",
             "清华": "https://pypi.tuna.tsinghua.edu.cn/simple/",
             "阿里": "https://mirrors.aliyun.com/pypi/simple/",
             "豆瓣": "https://pypi.douban.com/simple/",
