@@ -35,7 +35,7 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements GUI-可视化管理工具 v0.5.0")
+        self.root.title("Requirements GUI-可视化管理工具 v0.5.2")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -149,6 +149,7 @@ class RequirementsManager:
         usage_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Button(usage_frame, text="GitHub项目下载", command=self.download_from_github).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(usage_frame, text="打开CMD窗口", command=self.open_cmd_window).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 预设包区域
         preset_frame = ttk.LabelFrame(main_frame, text="预设包集合")
@@ -705,7 +706,47 @@ class RequirementsManager:
         """在后台线程中执行包更新操作"""
         try:
             self.root.after(0, lambda: self.update_status(f"正在更新包: {', '.join(packages)}"))
-            cmd = self.get_pip_command() + ["install", "--upgrade"] + packages
+            
+            # 特殊处理pip包的更新 - 使用正确的命令格式避免权限问题
+            if "pip" in packages:
+                # 如果要更新pip，使用python -m pip格式确保正确执行
+                cmd = self.get_pip_command()
+                # 检查是否是直接调用pip命令，如果是则改为使用python -m pip
+                if len(cmd) == 1 and (cmd[0].endswith("pip.exe") or cmd[0].endswith("pip")):
+                    # 替换为python -m pip格式
+                    python_cmd = cmd[0].replace("pip.exe", "python.exe").replace("pip", "python")
+                    if not os.path.exists(python_cmd):
+                        # 如果找不到对应的python.exe，尝试其他方式
+                        if self.current_venv:
+                            if sys.platform == "win32":
+                                python_cmd = os.path.join(self.current_venv, "Scripts", "python.exe")
+                            else:
+                                python_cmd = os.path.join(self.current_venv, "bin", "python")
+                        else:
+                            python_cmd = sys.executable
+                    cmd = [python_cmd, "-m", "pip"]
+                elif len(cmd) == 3 and cmd[1] == "-m" and cmd[2] == "pip":
+                    # 已经是python -m pip格式，无需更改
+                    pass
+                else:
+                    # 其他情况，尝试转换为python -m pip格式
+                    if self.current_venv:
+                        if sys.platform == "win32":
+                            python_cmd = os.path.join(self.current_venv, "Scripts", "python.exe")
+                        else:
+                            python_cmd = os.path.join(self.current_venv, "bin", "python")
+                        if os.path.exists(python_cmd):
+                            cmd = [python_cmd, "-m", "pip"]
+                        # 如果找不到python，保持原有命令
+                    else:
+                        cmd = [sys.executable, "-m", "pip"]
+                
+                # 添加更新命令
+                cmd.extend(["install", "--upgrade"])
+                cmd.extend(packages)
+            else:
+                # 非pip包更新，使用原有逻辑
+                cmd = self.get_pip_command() + ["install", "--upgrade"] + packages
             
             # 添加镜像源参数到正确位置（在install之后）
             mirror_url = self.mirror_sources.get(self.current_mirror, "")
@@ -1720,6 +1761,48 @@ pause
             except Exception as e:
                 messagebox.showerror("错误", f"创建启动器失败: {str(e)}")
                 self.update_status(f"创建启动器失败: {str(e)}")
+    
+    def open_cmd_window(self):
+        """打开CMD命令窗口，如果已选择环境则使用该环境的Python，否则使用系统Python"""
+        try:
+            # 检查是否选择了虚拟环境或嵌入式环境
+            if self.current_venv:
+                # 获取当前环境的Scripts目录（Windows）或bin目录（Linux/Mac）
+                if sys.platform == "win32":
+                    scripts_dir = os.path.join(self.current_venv, "Scripts")
+                else:
+                    scripts_dir = os.path.join(self.current_venv, "bin")
+                
+                # 检查Scripts/bin目录是否存在
+                if os.path.exists(scripts_dir):
+                    # 在当前环境的Scripts/bin目录下打开新的CMD窗口
+                    if sys.platform == "win32":
+                        subprocess.Popen(["cmd", "/k", "title", "Requirements GUI CMD - Virtual Environment"], 
+                                       cwd=scripts_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    else:
+                        subprocess.Popen(["gnome-terminal", "--title", "Requirements GUI Terminal - Virtual Environment", "--working-directory", scripts_dir])
+                    self.update_status(f"已在环境目录打开新的CMD窗口: {scripts_dir}")
+                else:
+                    # 如果Scripts/bin目录不存在，就在虚拟环境根目录打开
+                    if sys.platform == "win32":
+                        subprocess.Popen(["cmd", "/k", "title", "Requirements GUI CMD - Virtual Environment"], 
+                                       cwd=self.current_venv, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    else:
+                        subprocess.Popen(["gnome-terminal", "--title", "Requirements GUI Terminal - Virtual Environment", "--working-directory", self.current_venv])
+                    self.update_status(f"已在环境根目录打开新的CMD窗口: {self.current_venv}")
+            else:
+                # 没有选择环境，使用系统Python路径
+                # 获取系统Python可执行文件所在目录
+                python_dir = os.path.dirname(sys.executable)
+                if sys.platform == "win32":
+                    subprocess.Popen(["cmd", "/k", "title", "Requirements GUI CMD - System Python"], 
+                                   cwd=python_dir, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                else:
+                    subprocess.Popen(["gnome-terminal", "--title", "Requirements GUI Terminal - System Python", "--working-directory", python_dir])
+                self.update_status(f"已在系统Python目录打开新的CMD窗口: {python_dir}")
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开CMD窗口: {str(e)}")
+            self.update_status(f"打开CMD窗口失败: {str(e)}")
     
     def download_from_github(self):
         """从GitHub下载项目功能"""
