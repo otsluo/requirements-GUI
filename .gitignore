@@ -9,6 +9,8 @@ setup.bat
 build_exe.py
 build_exe.bat
 PACKAGING.md
+# hook-tkinterdnd2.py别删
+hook-tkinterdnd2.py
 
 dist
 build

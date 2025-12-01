@@ -35,7 +35,7 @@ except ImportError:
 class RequirementsManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Requirements GUI-可视化管理工具 v0.5.2")
+        self.root.title("Requirements GUI-可视化管理工具 v0.5.3")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -453,6 +453,9 @@ class RequirementsManager:
                 package['source'],
                 package['description']
             ))
+        
+        # 清除高亮标签配置（如果存在）
+        self.tree.tag_configure('highlight', background='', foreground='')
             
     def add_package(self):
         """添加新包"""
@@ -477,6 +480,9 @@ class RequirementsManager:
             self.packages.append(package)
             self.refresh_tree()
             
+            # 清除可能存在的高亮显示
+            self.clear_highlight()
+            
     def remove_package(self):
         """删除选中的包"""
         selected_items = self.tree.selection()
@@ -490,6 +496,9 @@ class RequirementsManager:
             for idx in indices:
                 del self.packages[idx]
             self.refresh_tree()
+            
+            # 清除可能存在的高亮显示
+            self.clear_highlight()
             
     def edit_package(self, event=None):
         """编辑选中的包"""
@@ -536,6 +545,9 @@ class RequirementsManager:
                 'description': ''
             }
             self.refresh_tree()
+            
+            # 清除可能存在的高亮显示
+            self.clear_highlight()
             
     def refresh_packages(self):
         """刷新包列表"""
@@ -1555,8 +1567,12 @@ class RequirementsManager:
     def save_installed_as_requirements(self):
         """将已安装的包保存为requirements文件"""
         # 弹出对话框让用户选择保存选项
-        save_options = [("包含版本", True), ("不包含版本", False)]
-        choice = messagebox.askyesno("保存选项", "是否包含版本信息？\n点击'是'包含版本，点击'否'不包含版本")
+        dialog = SaveInstalledDialog(self.root)
+        if not dialog.result:
+            # 用户点击了取消按钮
+            return
+            
+        include_version = dialog.result['include_version']
         
         # 选择保存位置
         file_path = filedialog.asksaveasfilename(
@@ -1570,8 +1586,6 @@ class RequirementsManager:
             try:
                 # 生成内容
                 lines = []
-                include_version = choice  # True表示包含版本，False表示不包含
-                
                 for package in self.packages:
                     if include_version and package['version']:
                         # 如果操作符为空，则只使用包名和版本号
@@ -1666,20 +1680,27 @@ class RequirementsManager:
         if search_dialog.result:
             package_name = search_dialog.result.strip()
             if package_name:
-                # 检查包是否已安装
-                description = self.check_package_installed(package_name)
+                # 检查包是否在当前列表中
+                found_indices = []
+                for i, package in enumerate(self.packages):
+                    if package['name'].lower() == package_name.lower():
+                        found_indices.append(i)
                 
-                # 添加包到列表
-                package = {
-                    'name': package_name,
-                    'version': '',
-                    'operator': '',
-                    'source': 'pypi',
-                    'description': description
-                }
-                self.packages.append(package)
-                self.refresh_tree()
-                self.update_status(f"已添加包: {package_name}")
+                if found_indices:
+                    # 包存在，直接跳转到对应位置
+                    self.tree.selection_set([str(idx) for idx in found_indices])
+                    # 滚动到第一个匹配项
+                    self.tree.see(str(found_indices[0]))
+                    self.update_status(f"找到 {len(found_indices)} 个匹配的包: {package_name}")
+                    
+                    # 在状态栏显示更多信息
+                    if len(found_indices) == 1:
+                        item_values = self.tree.item(str(found_indices[0]), 'values')
+                        self.update_status(f"找到包: {package_name} | 版本: {item_values[1]} | 来源: {item_values[3]}")
+                else:
+                    # 包不存在，提示用户
+                    messagebox.showinfo("提示", f"在当前依赖列表中未找到包: {package_name}")
+                    self.update_status(f"未找到包: {package_name}")
     
     def create_launcher(self):
         """创建启动器功能"""
@@ -2100,6 +2121,12 @@ pause
         except Exception as e:
             messagebox.showerror("错误", f"拖放文件处理失败: {str(e)}")
             self.update_status(f"拖放文件处理失败: {str(e)}")
+    
+    def clear_highlight(self):
+        """清除所有高亮显示"""
+        for item in self.tree.get_children():
+            self.tree.item(item, tags=())
+        self.tree.tag_configure("highlight", background="")
 
 
 class PackageDialog:
@@ -2208,7 +2235,7 @@ class SearchPackageDialog:
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=1, column=0, columnspan=2, pady=20)
         
-        ttk.Button(button_frame, text="添加", command=self.ok).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="搜索", command=self.ok).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
         
         # 配置列权重
@@ -2713,6 +2740,63 @@ class EditPresetDialog:
     def cancel(self):
         """取消按钮回调"""
         self.dialog.destroy()
+
+
+class SaveInstalledDialog:
+    def __init__(self, parent):
+        self.result = None
+        
+        self.top = tk.Toplevel(parent)
+        self.top.title("保存已安装的包")
+        self.top.geometry("350x200")  # 增大窗口尺寸
+        self.top.resizable(False, False)  # 禁止调整窗口大小
+        self.top.transient(parent)
+        self.top.grab_set()
+        
+        # 居中显示
+        self.top.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建输入字段
+        frame = ttk.Frame(self.top)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 保存选项
+        ttk.Label(frame, text="请选择保存选项:").grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        self.include_version_var = tk.BooleanVar(value=True)
+        ttk.Radiobutton(frame, text="包含版本信息", variable=self.include_version_var, value=True).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Radiobutton(frame, text="不包含版本信息", variable=self.include_version_var, value=False).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # 按钮
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="确定", command=self.ok, width=10).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel, width=10).pack(side=tk.LEFT, padx=10)
+        
+        # 绑定回车键和ESC键
+        self.top.bind("<Return>", lambda e: self.ok())
+        self.top.bind("<Escape>", lambda e: self.cancel())
+        
+        # 设置焦点到窗口
+        self.top.focus()
+        
+        # 确保窗口完全绘制后调整位置
+        self.top.update_idletasks()
+        
+        # 等待窗口关闭
+        parent.wait_window(self.top)
+        
+    def ok(self):
+        """确定按钮回调"""
+        self.result = {
+            'include_version': self.include_version_var.get()
+        }
+        self.top.destroy()
+        
+    def cancel(self):
+        """取消按钮回调"""
+        self.top.destroy()
 
 
 class BatchOperatorDialog:
