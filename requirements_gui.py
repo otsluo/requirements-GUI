@@ -12,7 +12,8 @@ import platform
 
 # 尝试导入tkinterdnd2以支持拖放功能
 try:
-    from tkinterdnd2 import DND_FILES, TkinterDnD
+    import tkinterdnd2
+    from tkinterdnd2 import DND_FILES
     HAS_DND = True
 except ImportError:
     HAS_DND = False
@@ -34,8 +35,14 @@ except ImportError:
 
 class RequirementsManager:
     def __init__(self, root):
-        self.root = root
-        self.root.title("Requirements GUI-可视化管理工具 v0.5.3")
+        # 如果支持拖放功能，则使用TkinterDnD创建根窗口
+        if HAS_DND:
+            self.root = root  # 使用传入的root参数
+        else:
+            self.root = root
+        
+        # 设置窗口标题和尺寸
+        self.root.title("Requirements GUI-可视化管理工具 v0.5.4")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -149,6 +156,8 @@ class RequirementsManager:
         usage_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Button(usage_frame, text="GitHub项目下载", command=self.download_from_github).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(usage_frame, text="切换GitHub项目版本-测试版", command=self.switch_github_version).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(usage_frame, text="更新项目", command=self.update_project).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(usage_frame, text="打开CMD窗口", command=self.open_cmd_window).pack(side=tk.LEFT, padx=5, pady=5)
         
         # 预设包区域
@@ -2127,6 +2136,195 @@ pause
         for item in self.tree.get_children():
             self.tree.item(item, tags=())
         self.tree.tag_configure("highlight", background="")
+    
+    def switch_github_version(self):
+        """切换GitHub项目版本功能"""
+        try:
+            # 弹出目录选择对话框，让用户选择GitHub项目目录
+            project_path = filedialog.askdirectory(
+                title="选择GitHub项目目录",
+                initialdir=os.getcwd()  # 默认使用当前工作目录
+            )
+            
+            # 检查用户是否选择了目录
+            if not project_path or not os.path.exists(project_path):
+                self.update_status("未选择有效的项目目录")
+                return
+            
+            # 检查所选目录是否为Git仓库
+            git_dir = os.path.join(project_path, ".git")
+            if not os.path.exists(git_dir):
+                messagebox.showerror("错误", "所选目录不是一个Git仓库")
+                self.update_status("选择的目录不是Git仓库")
+                return
+            
+            # 创建版本切换对话框
+            dialog = SwitchVersionDialog(self.root, project_path)
+            
+            # 检查是否有结果返回
+            if dialog.result:
+                version_type = dialog.result['type']
+                version_name = dialog.result['name']
+                self.update_status(f"已切换到{version_type}: {version_name}")
+            else:
+                self.update_status("取消了版本切换操作")
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"切换版本时发生错误: {str(e)}")
+            self.update_status(f"版本切换失败: {str(e)}")
+    
+    def update_project(self):
+        """更新项目功能 - 让用户选择项目目录并执行git pull命令更新项目"""
+        try:
+            # 让用户选择项目目录
+            project_path = filedialog.askdirectory(
+                title="选择要更新的Git项目目录",
+                initialdir=self.last_download_dir or os.getcwd()
+            )
+            
+            # 如果用户取消了选择，直接返回
+            if not project_path:
+                self.update_status("用户取消了项目选择")
+                return
+            
+            # 保存最后选择的目录
+            self.last_download_dir = os.path.dirname(project_path)
+            
+            # 检查项目目录是否为Git仓库
+            git_dir = os.path.join(project_path, ".git")
+            if not os.path.exists(git_dir):
+                messagebox.showerror("错误", "所选目录不是一个Git仓库")
+                self.update_status("所选目录不是Git仓库")
+                return
+            
+            # 确认用户是否要更新项目
+            if not messagebox.askyesno("确认更新", f"确定要更新项目吗？\n项目路径: {project_path}\n\n这将从远程仓库拉取最新的更改。"):
+                self.update_status("用户取消了更新操作")
+                return
+            
+            # 执行git pull命令
+            self.update_status("正在更新项目...")
+            
+            # 创建进度窗口
+            progress_window = tk.Toplevel(self.root)
+            progress_window.title("更新进度")
+            progress_window.geometry("400x150")
+            progress_window.resizable(False, False)
+            progress_window.transient(self.root)
+            progress_window.grab_set()
+            
+            # 居中显示
+            progress_window.geometry("+%d+%d" % (self.root.winfo_rootx()+50, self.root.winfo_rooty()+50))
+            
+            # 创建进度条和标签
+            progress_frame = ttk.Frame(progress_window)
+            progress_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+            
+            progress_label = ttk.Label(progress_frame, text="正在更新项目...")
+            progress_label.pack(pady=(0, 10))
+            
+            progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", length=300, mode="indeterminate")
+            progress_bar.pack(pady=(0, 10))
+            progress_bar.start(10)  # 启动不确定模式的进度条动画
+            
+            status_label = ttk.Label(progress_frame, text="准备更新...")
+            status_label.pack()
+            
+            # 更新窗口
+            progress_window.update()
+            
+            # 在新线程中执行更新，避免阻塞UI
+            import threading
+            update_thread = threading.Thread(
+                target=self._perform_git_pull,
+                args=(project_path, progress_window, status_label),
+                daemon=True
+            )
+            update_thread.start()
+            
+            # 等待更新完成
+            progress_window.wait_window()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"更新项目时发生错误: {str(e)}")
+            self.update_status(f"项目更新错误: {str(e)}")
+    
+    def _perform_git_pull(self, project_path, progress_window, status_label):
+        """执行实际的git pull操作，包含重试机制"""
+        max_retries = 3  # 最大重试次数
+        retry_count = 0
+        
+        while retry_count <= max_retries:
+            try:
+                # 更新状态
+                if retry_count == 0:
+                    self.root.after(0, lambda: status_label.config(text="正在连接到远程仓库..."))
+                else:
+                    self.root.after(0, lambda: status_label.config(text=f"重试中... (第{retry_count}次)"))
+                
+                # 执行git pull命令
+                process = subprocess.Popen(
+                    ["git", "pull"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=project_path,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # 实时读取输出
+                output_lines = []
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        output_lines.append(output.strip())
+                        # 更新状态信息（限制文本长度）
+                        self.root.after(0, lambda: status_label.config(text=output.strip()[:50]))
+                
+                # 等待进程结束
+                return_code = process.poll()
+                
+                # 获取完整的输出
+                stdout_output = "\n".join(output_lines)
+                stderr_output = process.stderr.read()
+                
+                # 显示结果
+                if return_code == 0:
+                    self.root.after(0, progress_window.destroy)
+                    self.root.after(0, lambda: messagebox.showinfo("成功", "项目已成功更新"))
+                    self.root.after(0, lambda: self.update_status("项目更新完成"))
+                    return  # 成功更新，退出循环
+                else:
+                    error_msg = stderr_output.strip() if stderr_output else "未知错误"
+                    retry_count += 1
+                    
+                    # 如果达到最大重试次数，显示错误
+                    if retry_count > max_retries:
+                        self.root.after(0, progress_window.destroy)
+                        self.root.after(0, lambda: messagebox.showerror("错误", f"项目更新失败，已重试{max_retries}次:\n{error_msg}"))
+                        self.root.after(0, lambda: self.update_status(f"项目更新失败: {error_msg}"))
+                        return
+                    else:
+                        # 等待一段时间后重试
+                        import time
+                        time.sleep(2)
+                        
+            except Exception as e:
+                retry_count += 1
+                
+                # 如果达到最大重试次数，显示错误
+                if retry_count > max_retries:
+                    self.root.after(0, progress_window.destroy)
+                    self.root.after(0, lambda: messagebox.showerror("错误", f"更新过程中发生异常，已重试{max_retries}次:\n{str(e)}"))
+                    self.root.after(0, lambda: self.update_status(f"项目更新异常: {str(e)}"))
+                    return
+                else:
+                    # 等待一段时间后重试
+                    import time
+                    time.sleep(2)
 
 
 class PackageDialog:
@@ -2973,6 +3171,265 @@ class DownloadDialog:
         self.dialog.destroy()
 
 
+class SwitchVersionDialog:
+    """切换GitHub项目版本对话框"""
+    
+    def __init__(self, parent, project_path):
+        self.result = None
+        self.project_path = project_path
+        self.branches = []
+        self.tags = []
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("切换GitHub项目版本")
+        self.dialog.geometry("500x450")  # 增加对话框高度
+        self.dialog.minsize(500, 450)   # 调整最小高度
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # 居中显示
+        self.dialog.geometry("+%d+%d" % (parent.winfo_rootx()+50, parent.winfo_rooty()+50))
+        
+        # 创建主框架
+        main_frame = ttk.Frame(self.dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 项目路径显示
+        ttk.Label(main_frame, text="项目路径:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        ttk.Label(main_frame, text=project_path, foreground="blue").grid(row=0, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # 分支选择区域
+        branch_frame = ttk.LabelFrame(main_frame, text="分支")
+        branch_frame.grid(row=1, column=0, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        branch_frame.columnconfigure(0, weight=1)
+        
+        # 分支列表
+        self.branch_listbox = tk.Listbox(branch_frame, height=6)
+        branch_scrollbar = ttk.Scrollbar(branch_frame, orient=tk.VERTICAL, command=self.branch_listbox.yview)
+        self.branch_listbox.configure(yscrollcommand=branch_scrollbar.set)
+        
+        self.branch_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
+        branch_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=5)
+        
+        # 标签选择区域
+        tag_frame = ttk.LabelFrame(main_frame, text="标签 (Tags)")
+        tag_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        tag_frame.columnconfigure(0, weight=1)
+        
+        # 标签列表
+        self.tag_listbox = tk.Listbox(tag_frame, height=6)
+        tag_scrollbar = ttk.Scrollbar(tag_frame, orient=tk.VERTICAL, command=self.tag_listbox.yview)
+        self.tag_listbox.configure(yscrollcommand=tag_scrollbar.set)
+        
+        self.tag_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
+        tag_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=5)
+        
+        # 状态标签
+        self.status_label = ttk.Label(main_frame, text="正在获取版本信息...", foreground="orange")
+        self.status_label.grid(row=3, column=0, columnspan=2, pady=(0, 10))  # 调整状态标签位置
+        
+        # 按钮区域
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(10, 0))  # 调整按钮区域位置
+        
+        self.switch_btn = ttk.Button(button_frame, text="切换", command=self.ok, state=tk.DISABLED)
+        self.switch_btn.pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
+        
+        # 配置列权重
+        main_frame.columnconfigure(1, weight=1)
+        
+        # 绑定列表框选择事件
+        self.branch_listbox.bind('<<ListboxSelect>>', self.on_branch_select)
+        self.tag_listbox.bind('<<ListboxSelect>>', self.on_tag_select)
+        
+        # 绑定ESC键
+        self.dialog.bind("<Escape>", lambda e: self.cancel())
+        
+        # 在新线程中获取分支和标签信息
+        import threading
+        fetch_thread = threading.Thread(target=self.fetch_versions, daemon=True)
+        fetch_thread.start()
+        
+        # 等待窗口关闭
+        parent.wait_window(self.dialog)
+        
+    def fetch_versions(self):
+        """获取项目的分支和标签信息"""
+        try:
+            # 切换到项目目录
+            original_cwd = os.getcwd()
+            os.chdir(self.project_path)
+            
+            # 获取所有分支
+            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, check=True)
+            branches_output = result.stdout.strip()
+            
+            # 解析分支信息
+            self.branches = []
+            for line in branches_output.split('\n'):
+                line = line.strip()
+                if line.startswith('*'):
+                    # 当前分支
+                    branch_name = line[2:].strip()
+                    self.branches.append((branch_name, True))
+                elif '->' not in line:  # 过滤掉指向其他引用的符号链接
+                    # 远程分支需要去掉remotes/origin/前缀
+                    if line.startswith('remotes/origin/'):
+                        branch_name = line.replace('remotes/origin/', '')
+                        # 过滤掉HEAD引用
+                        if branch_name != 'HEAD':
+                            self.branches.append((branch_name, False))
+                    else:
+                        self.branches.append((line, False))
+            
+            # 获取所有标签
+            result = subprocess.run(["git", "tag"], capture_output=True, text=True, check=True)
+            tags_output = result.stdout.strip()
+            self.tags = [tag.strip() for tag in tags_output.split('\n') if tag.strip()]
+            
+            # 更新UI
+            self.dialog.after(0, self.update_ui)
+            
+        except subprocess.CalledProcessError as e:
+            self.dialog.after(0, lambda: self.show_error(f"Git命令执行失败: {e.stderr}"))
+        except Exception as e:
+            self.dialog.after(0, lambda: self.show_error(f"获取版本信息时出错: {str(e)}"))
+        finally:
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+    
+    def update_ui(self):
+        """更新UI显示分支和标签"""
+        try:
+            # 清空列表
+            self.branch_listbox.delete(0, tk.END)
+            self.tag_listbox.delete(0, tk.END)
+            
+            # 添加分支到列表
+            for branch_name, is_current in self.branches:
+                display_text = f"{branch_name} (当前)" if is_current else branch_name
+                self.branch_listbox.insert(tk.END, display_text)
+                
+            # 添加标签到列表
+            for tag in self.tags:
+                self.tag_listbox.insert(tk.END, tag)
+            
+            # 更新状态
+            self.status_label.config(text="请选择要切换到的分支或标签", foreground="black")
+            
+        except Exception as e:
+            self.show_error(f"更新界面时出错: {str(e)}")
+    
+    def on_branch_select(self, event):
+        """分支选择事件"""
+        selection = self.branch_listbox.curselection()
+        if selection:
+            # 取消标签选择
+            self.tag_listbox.selection_clear(0, tk.END)
+            # 启用切换按钮
+            self.switch_btn.config(state=tk.NORMAL)
+    
+    def on_tag_select(self, event):
+        """标签选择事件"""
+        selection = self.tag_listbox.curselection()
+        if selection:
+            # 取消分支选择
+            self.branch_listbox.selection_clear(0, tk.END)
+            # 启用切换按钮
+            self.switch_btn.config(state=tk.NORMAL)
+    
+    def show_error(self, message):
+        """显示错误信息"""
+        self.status_label.config(text=message, foreground="red")
+        self.switch_btn.config(state=tk.DISABLED)
+        
+    def ok(self):
+        """确定按钮回调"""
+        try:
+            # 获取选择的分支或标签
+            branch_selection = self.branch_listbox.curselection()
+            tag_selection = self.tag_listbox.curselection()
+            
+            if branch_selection:
+                # 获取选择的分支
+                selected_index = branch_selection[0]
+                selected_item = self.branches[selected_index]
+                branch_name = selected_item[0]
+                
+                # 切换分支
+                self.switch_to_branch(branch_name)
+            elif tag_selection:
+                # 获取选择的标签
+                selected_index = tag_selection[0]
+                tag_name = self.tags[selected_index]
+                
+                # 切换到标签
+                self.switch_to_tag(tag_name)
+            else:
+                messagebox.showwarning("警告", "请先选择一个分支或标签")
+                return
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"切换版本时出错: {str(e)}")
+    
+    def switch_to_branch(self, branch_name):
+        """切换到指定分支"""
+        try:
+            # 切换到项目目录
+            original_cwd = os.getcwd()
+            os.chdir(self.project_path)
+            
+            # 执行git checkout命令
+            result = subprocess.run(["git", "checkout", branch_name], capture_output=True, text=True)
+            
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+            
+            if result.returncode == 0:
+                self.result = {'type': 'branch', 'name': branch_name}
+                messagebox.showinfo("成功", f"已成功切换到分支: {branch_name}")
+                self.dialog.destroy()
+            else:
+                error_msg = result.stderr.strip() if result.stderr else "未知错误"
+                messagebox.showerror("错误", f"切换分支失败: {error_msg}")
+                
+        except Exception as e:
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+            messagebox.showerror("错误", f"切换分支时出错: {str(e)}")
+    
+    def switch_to_tag(self, tag_name):
+        """切换到指定标签"""
+        try:
+            # 切换到项目目录
+            original_cwd = os.getcwd()
+            os.chdir(self.project_path)
+            
+            # 执行git checkout命令
+            result = subprocess.run(["git", "checkout", tag_name], capture_output=True, text=True)
+            
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+            
+            if result.returncode == 0:
+                self.result = {'type': 'tag', 'name': tag_name}
+                messagebox.showinfo("成功", f"已成功切换到标签: {tag_name}")
+                self.dialog.destroy()
+            else:
+                error_msg = result.stderr.strip() if result.stderr else "未知错误"
+                messagebox.showerror("错误", f"切换标签失败: {error_msg}")
+                
+        except Exception as e:
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+            messagebox.showerror("错误", f"切换标签时出错: {str(e)}")
+    
+    def cancel(self):
+        """取消按钮回调"""
+        self.dialog.destroy()
+
+
 class PresetManager:
     """预设包管理类，用于读取和写入JSON格式的预设包文件"""
     
@@ -3112,16 +3569,11 @@ class PresetManager:
 def main():
     # 如果支持拖放功能，则使用TkinterDnD创建根窗口
     if HAS_DND:
-        root = TkinterDnD.Tk()
+        root = tkinterdnd2.TkinterDnD.Tk()
     else:
         root = tk.Tk()
     
     app = RequirementsManager(root)
-    
-    # 如果支持拖放功能，则注册拖放事件
-    if HAS_DND:
-        app.register_drop_target()
-    
     root.mainloop()
 
 
