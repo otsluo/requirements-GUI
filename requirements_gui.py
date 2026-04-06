@@ -156,7 +156,7 @@ class RequirementsManager:
         usage_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Button(usage_frame, text="GitHub项目下载", command=self.download_from_github).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(usage_frame, text="切换GitHub项目版本-测试版", command=self.switch_github_version).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(usage_frame, text="切换GitHub项目版本", command=self.switch_github_version).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(usage_frame, text="更新项目", command=self.update_project).pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(usage_frame, text="打开CMD窗口", command=self.open_cmd_window).pack(side=tk.LEFT, padx=5, pady=5)
         
@@ -332,6 +332,7 @@ class RequirementsManager:
                 self.current_file = file_path
                 self.parse_requirements(content)
                 self.refresh_tree()
+                self.refresh_packages()  # 对比已安装包并标记
                 self.update_status(f"已打开文件: {file_path}")
                 
             except Exception as e:
@@ -569,13 +570,36 @@ class RequirementsManager:
         self.root.after(0, lambda: self.update_status("正在刷新包列表..."))
         try:
             # 获取已安装的包信息
+            # 根据是否选择了虚拟环境来决定使用哪个环境进行对比
             installed_packages = {}
-            if distributions is not None:
-                # 使用importlib.metadata或importlib_metadata
-                installed_packages = {dist.metadata['Name'].lower(): dist.version for dist in distributions()}
-            else:
-                # 回退到pkg_resources
-                installed_packages = {pkg.key: pkg.version for pkg in working_set}
+            
+            try:
+                # 使用pip freeze命令获取已安装的包，这样会根据当前环境（系统或虚拟环境）正确获取
+                cmd = self.get_pip_command() + ["freeze"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0:
+                    # 解析pip freeze的输出
+                    for line in result.stdout.strip().split('\n'):
+                        if line and '==' in line:
+                            name, version = line.split('==', 1)
+                            installed_packages[name.lower()] = version
+                else:
+                    # 如果pip freeze失败，回退到原来的实现
+                    if distributions is not None:
+                        # 使用importlib.metadata或importlib_metadata
+                        installed_packages = {dist.metadata['Name'].lower(): dist.version for dist in distributions()}
+                    else:
+                        # 回退到pkg_resources
+                        installed_packages = {pkg.key: pkg.version for pkg in working_set}
+            except Exception:
+                # 如果执行pip freeze出现异常，也回退到原来的实现
+                if distributions is not None:
+                    # 使用importlib.metadata或importlib_metadata
+                    installed_packages = {dist.metadata['Name'].lower(): dist.version for dist in distributions()}
+                else:
+                    # 回退到pkg_resources
+                    installed_packages = {pkg.key: pkg.version for pkg in working_set}
             
             # 更新包信息
             for package in self.packages:
@@ -591,13 +615,35 @@ class RequirementsManager:
                 if pkg_key in installed_packages:
                     package['description'] = f"已安装: {installed_packages[pkg_key]}"
                 else:
-                    package['description'] = "未安装"
+                    package['description'] = ""  # 未安装的包留空
                     
             self.root.after(0, lambda: self.refresh_tree())
             self.root.after(0, lambda: self.update_status("包列表刷新完成"))
         except Exception as e:
             self.root.after(0, lambda: self.update_status(f"刷新失败: {str(e)}"))
             self.root.after(0, lambda: messagebox.showerror("错误", f"刷新包列表失败: {str(e)}"))
+    
+    def _get_install_string(self, package: dict) -> str:
+        """根据包的来源生成安装字符串"""
+        source = package.get('source', 'pypi')
+        name = package['name']
+        version = package.get('version', '')
+        
+        if source == 'git':
+            if version:
+                return f"git+{version}#egg={name}"
+            else:
+                return f"git+https://github.com/{name}.git"
+        elif source == '本地':
+            if version:
+                return f"{version}"
+            else:
+                return name
+        else:
+            if version:
+                return f"{name}{version}"
+            else:
+                return name
             
     def install_selected(self):
         """安装选中的包"""
@@ -610,10 +656,8 @@ class RequirementsManager:
         for item in selected_items:
             idx = int(item)
             package = self.packages[idx]
-            if package['version']:
-                packages_to_install.append(f"{package['name']}{package['version']}")
-            else:
-                packages_to_install.append(package['name'])
+            install_str = self._get_install_string(package)
+            packages_to_install.append(install_str)
                 
         self.install_packages(packages_to_install)
         
@@ -625,10 +669,8 @@ class RequirementsManager:
             
         packages_to_install = []
         for package in self.packages:
-            if package['version']:
-                packages_to_install.append(f"{package['name']}{package['version']}")
-            else:
-                packages_to_install.append(package['name'])
+            install_str = self._get_install_string(package)
+            packages_to_install.append(install_str)
                 
         self.install_packages(packages_to_install)
         
@@ -2119,6 +2161,7 @@ pause
                     self.current_file = file_path
                     self.parse_requirements(content)
                     self.refresh_tree()
+                    self.refresh_packages()  # 对比已安装包并标记
                     self.update_status(f"已通过拖放导入文件: {file_path}")
                 else:
                     messagebox.showwarning("警告", "请拖放requirements.txt文件")
@@ -2330,6 +2373,7 @@ pause
 class PackageDialog:
     def __init__(self, parent, title, name="", version="", operator="", source="pypi"):
         self.result = None
+        self.parent = parent
         
         self.top = tk.Toplevel(parent)
         self.top.title(title)
@@ -2347,7 +2391,8 @@ class PackageDialog:
         # 包名
         ttk.Label(frame, text="包名:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.name_var = tk.StringVar(value=name)
-        ttk.Entry(frame, textvariable=self.name_var, width=30).grid(row=0, column=1, sticky=tk.EW, pady=5)
+        self.name_entry = ttk.Entry(frame, textvariable=self.name_var, width=30)
+        self.name_entry.grid(row=0, column=1, sticky=tk.EW, pady=5)
         
         # 版本操作符
         ttk.Label(frame, text="操作符:").grid(row=1, column=0, sticky=tk.W, pady=5)
@@ -2359,7 +2404,8 @@ class PackageDialog:
         # 版本号
         ttk.Label(frame, text="版本号:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.version_var = tk.StringVar(value=version)
-        ttk.Entry(frame, textvariable=self.version_var, width=30).grid(row=2, column=1, sticky=tk.EW, pady=5)
+        self.version_entry = ttk.Entry(frame, textvariable=self.version_var, width=30)
+        self.version_entry.grid(row=2, column=1, sticky=tk.EW, pady=5)
         
         # 来源
         ttk.Label(frame, text="来源:").grid(row=3, column=0, sticky=tk.W, pady=5)
@@ -2372,6 +2418,7 @@ class PackageDialog:
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=4, column=0, columnspan=2, pady=20)
         
+        ttk.Button(button_frame, text="对比版本", command=self.compare_version).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="确定", command=self.ok).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
         
@@ -2384,7 +2431,111 @@ class PackageDialog:
         
         # 等待窗口关闭
         parent.wait_window(self.top)
+    
+    def get_latest_version(self, package_name):
+        """获取包的最新版本"""
+        try:
+            import urllib.request
+            import json
+            
+            # 使用PyPI的JSON API获取包信息
+            url = f"https://pypi.org/pypi/{package_name}/json"
+            request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            
+            with urllib.request.urlopen(request, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                
+            # 获取最新版本号
+            latest_version = data.get('info', {}).get('version', '')
+            return latest_version
+        except Exception as e:
+            return None
+    
+    def compare_version(self):
+        """对比版本功能"""
+        package_name = self.name_var.get().strip()
         
+        if not package_name:
+            messagebox.showwarning("警告", "请输入包名")
+            self.name_entry.focus()
+            return
+        
+        # 显示加载提示
+        self.top.config(cursor="watch")
+        self.top.update()
+        
+        import threading
+        threading.Thread(target=self._compare_version_thread, args=(package_name,), daemon=True).start()
+    
+    def _compare_version_thread(self, package_name):
+        """在后台线程中对比版本"""
+        latest_version = self.get_latest_version(package_name)
+        
+        self.top.after(0, lambda: self._show_version_comparison(latest_version))
+    
+    def _show_version_comparison(self, latest_version):
+        """显示版本对比结果"""
+        self.top.config(cursor="")
+        
+        if not latest_version:
+            messagebox.showerror("错误", "无法获取最新版本信息，请检查包名或网络连接")
+            return
+        
+        current_version = self.version_var.get().strip()
+        
+        # 构建对比消息
+        if current_version:
+            message = f"当前版本: {current_version}\n最新版本: {latest_version}\n\n"
+            
+            # 比较版本
+            try:
+                from packaging import version
+                
+                if version.parse(latest_version) > version.parse(current_version):
+                    message += "提示: 有新版本可用！建议更新。"
+                elif version.parse(latest_version) == version.parse(current_version):
+                    message += "提示: 当前版本已是最新。"
+                else:
+                    message += "提示: 当前版本比最新版本更高。"
+            except Exception:
+                if latest_version != current_version:
+                    message += "提示: 版本不同，请手动确认是否需要更新。"
+                else:
+                    message += "提示: 版本相同。"
+        else:
+            message = f"最新版本: {latest_version}\n\n提示: 请设置版本号。"
+        
+        # 显示对比窗口
+        comparison_window = tk.Toplevel(self.top)
+        comparison_window.title("版本对比")
+        comparison_window.geometry("300x200")
+        comparison_window.transient(self.top)
+        comparison_window.grab_set()
+        
+        # 居中显示
+        comparison_window.geometry("+%d+%d" % (self.top.winfo_rootx()+50, self.top.winfo_rooty()+50))
+        
+        # 创建显示区域
+        frame = ttk.Frame(comparison_window)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        ttk.Label(frame, text="版本对比结果", font=('Arial', 10, 'bold')).pack(pady=(0, 10))
+        
+        text_widget = tk.Text(frame, height=8, width=40, wrap=tk.WORD)
+        text_widget.pack(fill=tk.BOTH, expand=True)
+        text_widget.insert('1.0', message)
+        text_widget.config(state='disabled')
+        
+        ttk.Button(frame, text="使用最新版本", command=lambda: self._use_latest_version(latest_version, comparison_window)).pack(pady=(10, 0))
+        
+        ttk.Button(frame, text="关闭", command=comparison_window.destroy).pack(pady=(5, 0))
+    
+    def _use_latest_version(self, latest_version, window):
+        """使用最新版本"""
+        self.version_var.set(latest_version)
+        window.destroy()
+        self.top.focus()
+    
     def ok(self):
         """确定按钮回调"""
         name = self.name_var.get().strip()
