@@ -77,7 +77,20 @@ class RequirementsManager:
         
         # 注册拖放事件（如果支持）
         self.register_drop_target()
-        
+    
+    def _get_subprocess_kwargs(self):
+        """获取 subprocess 调用的参数，在 Windows 上隐藏命令窗口"""
+        kwargs = {}
+        if sys.platform == 'win32':
+            # 使用 CREATE_NO_WINDOW 隐藏命令窗口
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            # 使用 STARTUPINFO 进一步确保窗口隐藏
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        return kwargs
+    
     def setup_ui(self):
         # 创建主框架
         main_frame = ttk.Frame(self.root)
@@ -398,6 +411,41 @@ class RequirementsManager:
         operator = ""
         source = "pypi"
         
+        # 检查是否为Git来源
+        if line.startswith('git+'):
+            source = 'git'
+            # 提取git URL
+            git_url = line[4:]  # 移除"git+"前缀
+            # 移除#egg=部分
+            if '#egg=' in git_url:
+                git_url = git_url.split('#egg=')[0]
+            name = git_url
+            version = git_url
+            # 从URL中提取包名
+            if 'github.com' in git_url:
+                parts = git_url.strip('/').split('/')
+                if len(parts) >= 2:
+                    name = parts[-1]
+            return {
+                'name': name,
+                'version': version,
+                'operator': operator,
+                'source': source,
+                'description': ''
+            }
+        
+        # 检查是否为本地路径
+        if line.startswith('/') or line.startswith('C:\\') or line.startswith('D:\\') or (len(line) > 2 and line[1] == ':'):
+            source = '本地'
+            name = line
+            return {
+                'name': name,
+                'version': version,
+                'operator': operator,
+                'source': source,
+                'description': ''
+            }
+            
         # 检查是否有版本操作符
         operators = ['==', '>=', '<=', '>', '<', '!=', '~=', '===']
         for op in operators:
@@ -420,16 +468,31 @@ class RequirementsManager:
         """生成requirements文件内容"""
         lines = []
         for package in self.packages:
-            if package['version']:
-                # 正确处理版本操作符，确保格式为 name==version
-                if package['operator'] and package['version'].startswith(package['operator']):
-                    line = f"{package['name']}{package['version']}"
+            source = package.get('source', 'pypi')
+            name = package['name']
+            version = package.get('version', '')
+            
+            if source == 'git':
+                if version:
+                    lines.append(f"git+{version}")
                 else:
-                    # 如果版本信息不包含操作符，则使用存储的操作符
-                    line = f"{package['name']}{package['operator']}{package['version']}"
+                    lines.append(name)
+            elif source == '本地':
+                if version:
+                    lines.append(version)
+                else:
+                    lines.append(name)
             else:
-                line = package['name']
-            lines.append(line)
+                if version:
+                    # 正确处理版本操作符，确保格式为 name==version
+                    if package['operator'] and version.startswith(package['operator']):
+                        line = f"{name}{version}"
+                    else:
+                        # 如果版本信息不包含操作符，则使用存储的操作符
+                        line = f"{name}{package['operator']}{version}"
+                else:
+                    line = name
+                lines.append(line)
         return '\n'.join(lines)
         
     def refresh_tree(self):
@@ -473,12 +536,17 @@ class RequirementsManager:
         if dialog.result:
             # 处理版本信息，考虑空操作符的情况
             version_str = ''
+            source = dialog.result['source']
             if dialog.result['version']:
                 if dialog.result['operator']:
                     version_str = dialog.result['operator'] + dialog.result['version']
                 else:
-                    # 如果操作符为空，默认使用==操作符
-                    version_str = '==' + dialog.result['version']
+                    # 对于本地和git来源，不添加操作符前缀
+                    if source == '本地' or source == 'git':
+                        version_str = dialog.result['version']
+                    else:
+                        # 对于pypi来源，如果操作符为空，默认使用==操作符
+                        version_str = '==' + dialog.result['version']
             
             package = {
                 'name': dialog.result['name'],
@@ -540,12 +608,17 @@ class RequirementsManager:
         if dialog.result:
             # 处理版本信息，考虑空操作符的情况
             version_str = ''
+            source = dialog.result['source']
             if dialog.result['version']:
                 if dialog.result['operator']:
                     version_str = dialog.result['operator'] + dialog.result['version']
                 else:
-                    # 如果操作符为空，默认使用==操作符
-                    version_str = '==' + dialog.result['version']
+                    # 对于本地和git来源，不添加操作符前缀
+                    if source == '本地' or source == 'git':
+                        version_str = dialog.result['version']
+                    else:
+                        # 对于pypi来源，如果操作符为空，默认使用==操作符
+                        version_str = '==' + dialog.result['version']
             
             self.packages[idx] = {
                 'name': dialog.result['name'],
@@ -574,9 +647,9 @@ class RequirementsManager:
             installed_packages = {}
             
             try:
-                # 使用pip freeze命令获取已安装的包，这样会根据当前环境（系统或虚拟环境）正确获取
+                # 使用pip freeze命令获取已安装的包,这样会根据当前环境(系统或虚拟环境)正确获取
                 cmd = self.get_pip_command() + ["freeze"]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **self._get_subprocess_kwargs())
                 
                 if result.returncode == 0:
                     # 解析pip freeze的输出
@@ -636,7 +709,25 @@ class RequirementsManager:
                 return f"git+https://github.com/{name}.git"
         elif source == '本地':
             if version:
-                return f"{version}"
+                # 移除可能存在的操作符前缀（如==）
+                if version.startswith('=='):
+                    return version[2:]
+                elif version.startswith('>='):
+                    return version[2:]
+                elif version.startswith('<='):
+                    return version[2:]
+                elif version.startswith('>'):
+                    return version[1:]
+                elif version.startswith('<'):
+                    return version[1:]
+                elif version.startswith('!='):
+                    return version[2:]
+                elif version.startswith('~='):
+                    return version[2:]
+                elif version.startswith('==='):
+                    return version[3:]
+                else:
+                    return version
             else:
                 return name
         else:
@@ -698,7 +789,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("安装过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -736,7 +827,8 @@ class RequirementsManager:
         for item in selected_items:
             idx = int(item)
             package = self.packages[idx]
-            packages_to_update.append(package['name'])
+            install_str = self._get_install_string(package)
+            packages_to_update.append(install_str)
             
         self.update_packages(packages_to_update)
         
@@ -747,12 +839,12 @@ class RequirementsManager:
             messagebox.showwarning("警告", "请先选择要降级的包")
             return
             
-        # 提取选中包的名称
         packages_to_downgrade = []
         for item in selected_items:
             idx = int(item)
             package = self.packages[idx]
-            packages_to_downgrade.append(package['name'])
+            install_str = self._get_install_string(package)
+            packages_to_downgrade.append(install_str)
             
         self.downgrade_packages(packages_to_downgrade)
         
@@ -820,7 +912,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("更新过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -881,7 +973,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("降级过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -946,7 +1038,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("卸载过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -991,7 +1083,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("生成过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             output_lines = []
@@ -1040,7 +1132,6 @@ class RequirementsManager:
         
         # 显示软件信息
         ttk.Label(info_frame, text="Requirements GUI-可视化管理工具", font=("微软雅黑", 12, "bold")).pack(pady=(0, 5))
-        ttk.Label(info_frame, text="版本: 0.0.1").pack(pady=2)
         ttk.Label(info_frame, text="这是一个用于管理Python包依赖的图形界面工具", wraplength=350).pack(pady=2)
         
         # 添加彩蛋功能：连续点击作者名称5次触发彩蛋
@@ -1161,7 +1252,10 @@ class RequirementsManager:
         try:
             self.root.after(0, lambda: self.update_status(f"正在创建虚拟环境: {venv_dir}"))
             self.root.after(0, lambda: self.append_debug_info(f"开始创建虚拟环境: {venv_dir}"))
-            venv.create(venv_dir, with_pip=True)
+            
+            # 统一使用手动创建方式，避免弹出黑色命令窗口
+            self._create_venv_manually(venv_dir)
+            
             self.root.after(0, lambda: setattr(self, 'current_venv', venv_dir))
             self.root.after(0, lambda: self.venv_label.config(text=f"虚拟环境: {venv_dir}"))
             self.root.after(0, lambda: self.append_debug_info(f"虚拟环境创建成功: {venv_dir}"))
@@ -1173,6 +1267,250 @@ class RequirementsManager:
             self.root.after(0, lambda msg=str(e): self.update_status(f"创建虚拟环境失败: {msg}"))
             self.root.after(0, lambda msg=str(e): self.append_debug_info(f"创建虚拟环境失败: {msg}"))
             self.root.after(0, lambda msg=str(e): messagebox.showerror("错误", f"虚拟环境创建失败: {msg}"))
+    
+    def _create_venv_manually(self, venv_dir):
+        """手动创建虚拟环境"""
+        os.makedirs(os.path.join(venv_dir, 'Scripts'), exist_ok=True)
+        os.makedirs(os.path.join(venv_dir, 'Lib', 'site-packages'), exist_ok=True)
+        os.makedirs(os.path.join(venv_dir, 'Include'), exist_ok=True)
+        
+        # 使用统一的方法获取真正的Python解释器
+        real_python = self._get_system_python()
+        
+        if not real_python:
+            raise Exception("找不到系统中安装的Python解释器，请先安装Python再使用此功能")
+        
+        python_home = os.path.dirname(real_python)
+        version_info = sys.version_info
+        
+        # 创建pyvenv.cfg配置文件
+        config_content = f"""home = {python_home}
+include-system-site-packages = false
+version = {version_info.major}.{version_info.minor}.{version_info.micro}
+"""
+        config_path = os.path.join(venv_dir, 'pyvenv.cfg')
+        with open(config_path, 'w') as f:
+            f.write(config_content)
+        
+        # 复制python.exe到虚拟环境Scripts目录
+        src_python = real_python
+        dst_python = os.path.join(venv_dir, 'Scripts', 'python.exe')
+        shutil.copy2(src_python, dst_python)
+        
+        # 复制pythonw.exe（如果存在）
+        src_pythonw = os.path.join(python_home, 'pythonw.exe')
+        if os.path.exists(src_pythonw):
+            dst_pythonw = os.path.join(venv_dir, 'Scripts', 'pythonw.exe')
+            shutil.copy2(src_pythonw, dst_pythonw)
+        
+        # 复制DLLs目录
+        src_dlls = os.path.join(python_home, 'DLLs')
+        if os.path.exists(src_dlls):
+            dst_dlls = os.path.join(venv_dir, 'DLLs')
+            shutil.copytree(src_dlls, dst_dlls, dirs_exist_ok=True)
+        
+        # 复制Lib目录（排除site-packages）
+        src_lib = os.path.join(python_home, 'Lib')
+        if os.path.exists(src_lib):
+            dst_lib = os.path.join(venv_dir, 'Lib')
+            os.makedirs(dst_lib, exist_ok=True)
+            for item in os.listdir(src_lib):
+                src_item = os.path.join(src_lib, item)
+                dst_item = os.path.join(dst_lib, item)
+                if item != 'site-packages':
+                    if os.path.isdir(src_item):
+                        shutil.copytree(src_item, dst_item, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src_item, dst_item)
+        
+        # 创建site-packages目录下的标准文件
+        site_packages = os.path.join(venv_dir, 'Lib', 'site-packages')
+        
+        # 创建easy-install.pth
+        with open(os.path.join(site_packages, 'easy-install.pth'), 'w') as f:
+            pass
+        
+        # 创建setuptools.pth（如果系统有）
+        src_setuptools_pth = os.path.join(python_home, 'Lib', 'site-packages', 'setuptools.pth')
+        if os.path.exists(src_setuptools_pth):
+            shutil.copy2(src_setuptools_pth, os.path.join(site_packages, 'setuptools.pth'))
+        
+        # 安装pip（使用ensurepip）
+        try:
+            subprocess.run([dst_python, '-m', 'ensurepip', '--upgrade'], 
+                         capture_output=True, text=True, timeout=60, cwd=venv_dir, **self._get_subprocess_kwargs())
+        except:
+            # ensurepip可能不可用，尝试使用get-pip.py
+            pass
+        
+        self.root.after(0, lambda: self.append_debug_info(f"使用Python: {real_python}"))
+    
+    def _get_system_python(self):
+        """获取系统中真正的Python解释器路径（打包环境下使用）"""
+        # 缓存结果
+        if hasattr(self, '_system_python_cache'):
+            return self._system_python_cache
+        
+        real_python = None
+        
+        # 方法1: 从注册表查找（最可靠，Windows）
+        if sys.platform == "win32":
+            try:
+                import winreg
+                # 先查64位
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Python\PythonCore', 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+                    i = 0
+                    best_version = (0, 0, 0)
+                    best_path = None
+                    while True:
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            subkey = winreg.OpenKey(key, subkey_name)
+                            try:
+                                install_path = winreg.QueryValueEx(subkey, 'InstallPath')[0]
+                                python_exe = os.path.join(install_path, 'python.exe')
+                                if os.path.exists(python_exe):
+                                    ver_parts = subkey_name.split('.')
+                                    if len(ver_parts) >= 2:
+                                        try:
+                                            major = int(ver_parts[0])
+                                            minor = int(ver_parts[1])
+                                            if (major, minor, 0) > best_version:
+                                                best_version = (major, minor, 0)
+                                                best_path = python_exe
+                                        except:
+                                            pass
+                            except:
+                                pass
+                            winreg.CloseKey(subkey)
+                            i += 1
+                        except WindowsError:
+                            break
+                    winreg.CloseKey(key)
+                    if best_path:
+                        real_python = best_path
+                except:
+                    pass
+                
+                # 如果64位没找到，查32位
+                if not real_python:
+                    try:
+                        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Python\PythonCore', 0, winreg.KEY_READ | winreg.KEY_WOW64_32KEY)
+                        i = 0
+                        best_version = (0, 0, 0)
+                        best_path = None
+                        while True:
+                            try:
+                                subkey_name = winreg.EnumKey(key, i)
+                                subkey = winreg.OpenKey(key, subkey_name)
+                                try:
+                                    install_path = winreg.QueryValueEx(subkey, 'InstallPath')[0]
+                                    python_exe = os.path.join(install_path, 'python.exe')
+                                    if os.path.exists(python_exe):
+                                        ver_parts = subkey_name.split('.')
+                                        if len(ver_parts) >= 2:
+                                            try:
+                                                major = int(ver_parts[0])
+                                                minor = int(ver_parts[1])
+                                                if (major, minor, 0) > best_version:
+                                                    best_version = (major, minor, 0)
+                                                    best_path = python_exe
+                                            except:
+                                                pass
+                                except:
+                                    pass
+                                winreg.CloseKey(subkey)
+                                i += 1
+                            except WindowsError:
+                                break
+                        winreg.CloseKey(key)
+                        if best_path:
+                            real_python = best_path
+                    except:
+                        pass
+                
+                # 也检查当前用户注册表
+                if not real_python:
+                    try:
+                        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Python\PythonCore')
+                        i = 0
+                        best_version = (0, 0, 0)
+                        best_path = None
+                        while True:
+                            try:
+                                subkey_name = winreg.EnumKey(key, i)
+                                subkey = winreg.OpenKey(key, subkey_name)
+                                try:
+                                    install_path = winreg.QueryValueEx(subkey, 'InstallPath')[0]
+                                    python_exe = os.path.join(install_path, 'python.exe')
+                                    if os.path.exists(python_exe):
+                                        ver_parts = subkey_name.split('.')
+                                        if len(ver_parts) >= 2:
+                                            try:
+                                                major = int(ver_parts[0])
+                                                minor = int(ver_parts[1])
+                                                if (major, minor, 0) > best_version:
+                                                    best_version = (major, minor, 0)
+                                                    best_path = python_exe
+                                            except:
+                                                pass
+                                except:
+                                    pass
+                                winreg.CloseKey(subkey)
+                                i += 1
+                            except WindowsError:
+                                break
+                        winreg.CloseKey(key)
+                        if best_path:
+                            real_python = best_path
+                    except:
+                        pass
+            except:
+                pass
+        
+        # 方法2: 检查常见安装路径，排除当前exe所在目录
+        if not real_python:
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            common_paths = [
+                r'C:\Python312\python.exe',
+                r'C:\Python311\python.exe',
+                r'C:\Python310\python.exe',
+                r'C:\Python39\python.exe',
+                r'C:\Python38\python.exe',
+                r'C:\Program Files\Python312\python.exe',
+                r'C:\Program Files\Python311\python.exe',
+                r'C:\Program Files\Python310\python.exe',
+                r'C:\Program Files\Python39\python.exe',
+                r'C:\Program Files\Python38\python.exe',
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    if os.path.dirname(os.path.abspath(path)) != exe_dir:
+                        real_python = path
+                        break
+        
+        # 方法3: 从PATH中查找，但要排除当前exe
+        if not real_python:
+            import shutil as shutil_module
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            python_path = shutil_module.which('python') or shutil_module.which('python3')
+            if python_path:
+                # 确保不是当前exe所在目录
+                if os.path.dirname(os.path.abspath(python_path)) != exe_dir:
+                    real_python = python_path
+        
+        # 方法4: 检查当前exe是否本身就是python
+        if not real_python:
+            exe_name = os.path.basename(sys.executable).lower()
+            if exe_name.startswith('python') and not exe_name.startswith('pythonw'):
+                # 检查是否是真正的python（不是打包的）
+                # 真正的python旁边应该有DLLs目录等
+                if os.path.exists(os.path.join(os.path.dirname(sys.executable), 'DLLs')):
+                    real_python = sys.executable
+        
+        self._system_python_cache = real_python
+        return real_python
 
     def create_named_venv(self):
         """创建指定名称的虚拟环境"""
@@ -1303,29 +1641,44 @@ class RequirementsManager:
                     cmd = [python_path, "-m", "pip"]
                 else:
                     # 如果找不到python可执行文件，回退到系统pip
-                    cmd = [sys.executable, "-m", "pip"]
+                    cmd = self._get_system_pip_command()
             else:
                 # 对于普通虚拟环境，使用虚拟环境的pip
                 if sys.platform == "win32":
                     pip_path = os.path.join(self.current_venv, "Scripts", "pip.exe")
+                    python_path = os.path.join(self.current_venv, "Scripts", "python.exe")
                 else:
                     pip_path = os.path.join(self.current_venv, "bin", "pip")
+                    python_path = os.path.join(self.current_venv, "bin", "python")
                 # 检查pip是否存在
                 if os.path.exists(pip_path):
                     cmd = [pip_path]
                 else:
                     # 如果找不到pip，回退到python -m pip
-                    python_path = os.path.join(self.current_venv, "python.exe") if sys.platform == "win32" else os.path.join(self.current_venv, "bin", "python")
                     if os.path.exists(python_path):
                         cmd = [python_path, "-m", "pip"]
                     else:
                         # 如果都找不到，回退到系统pip
-                        cmd = [sys.executable, "-m", "pip"]
+                        cmd = self._get_system_pip_command()
         else:
             # 否则使用系统pip
-            cmd = [sys.executable, "-m", "pip"]
+            cmd = self._get_system_pip_command()
             
         return cmd
+    
+    def _get_system_pip_command(self):
+        """获取系统pip命令（打包环境下安全版本）"""
+        if getattr(sys, 'frozen', False):
+            # 打包环境下，使用找到的系统Python
+            system_python = self._get_system_python()
+            if system_python:
+                return [system_python, "-m", "pip"]
+            else:
+                # 找不到系统Python，返回None
+                return None
+        else:
+            # 开发环境下，直接使用sys.executable
+            return [sys.executable, "-m", "pip"]
 
     def load_preset(self, preset_type):
         """加载预设包集合"""
@@ -1561,7 +1914,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("列出过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             output_lines = []
@@ -1910,7 +2263,7 @@ pause
                 
                 # 检查git是否可用
                 try:
-                    subprocess.run(["git", "--version"], check=True, capture_output=True)
+                    subprocess.run(["git", "--version"], check=True, capture_output=True, **self._get_subprocess_kwargs())
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     messagebox.showerror("错误", "未找到Git命令，请确保已安装Git并添加到系统PATH中")
                     self.update_status("Git未安装或未添加到PATH")
@@ -1973,29 +2326,21 @@ pause
                 messagebox.showerror("错误", f"下载过程中发生错误: {str(e)}")
                 self.update_status(f"项目下载错误: {str(e)}")
     
-    def _perform_git_clone(self, repo_url, target_dir, parent_dir, progress_window, status_label):
-        """执行实际的git clone操作"""
-        def show_retry_dialog(error_msg):
-            """显示重试对话框"""
-            retry_result = [False]  # 使用列表来存储结果，因为内部函数无法修改外部变量
-            
-            def on_retry():
-                retry_result[0] = True
-                retry_dialog.destroy()
-                
-            def on_cancel():
-                retry_result[0] = False
-                retry_dialog.destroy()
-            
-            retry_dialog = tk.Toplevel(progress_window)
+    def show_retry_dialog(self, error_msg, parent_window):
+        """在主线程中显示重试对话框，并返回用户选择"""
+        event = threading.Event()
+        result = [False]
+        
+        def create_dialog():
+            retry_dialog = tk.Toplevel(parent_window)
             retry_dialog.title("下载失败")
             retry_dialog.geometry("300x150")
             retry_dialog.resizable(False, False)
-            retry_dialog.transient(progress_window)
+            retry_dialog.transient(parent_window)
             retry_dialog.grab_set()
             
             # 居中显示
-            retry_dialog.geometry("+%d+%d" % (progress_window.winfo_rootx()+50, progress_window.winfo_rooty()+50))
+            retry_dialog.geometry("+%d+%d" % (parent_window.winfo_rootx()+50, parent_window.winfo_rooty()+50))
             
             # 创建消息标签
             message_frame = ttk.Frame(retry_dialog)
@@ -2008,12 +2353,29 @@ pause
             button_frame = ttk.Frame(message_frame)
             button_frame.pack(fill=tk.X, pady=(10, 0))
             
+            def on_retry():
+                result[0] = True
+                retry_dialog.destroy()
+                event.set()
+            
+            def on_cancel():
+                result[0] = False
+                retry_dialog.destroy()
+                event.set()
+            
             ttk.Button(button_frame, text="重试", command=on_retry).pack(side=tk.LEFT, padx=5)
             ttk.Button(button_frame, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=5)
-            
-            # 等待用户选择
-            retry_dialog.wait_window()
-            return retry_result[0]
+        
+        # 在主线程中创建对话框
+        self.root.after(0, create_dialog)
+        
+        # 等待用户操作完成
+        event.wait()
+        
+        return result[0]
+
+    def _perform_git_clone(self, repo_url, target_dir, parent_dir, progress_window, status_label):
+        """执行实际的git clone操作"""
         
         while True:  # 重试循环
             try:
@@ -2028,7 +2390,8 @@ pause
                     text=True,
                     cwd=parent_dir if parent_dir else None,
                     bufsize=1,
-                    universal_newlines=True
+                    universal_newlines=True,
+                    **self._get_subprocess_kwargs()
                 )
                 
                 # 实时读取输出
@@ -2055,9 +2418,9 @@ pause
                     error_msg = stderr_output.strip() if stderr_output else "未知错误"
                     # 提供更友好的错误信息
                     if "already exists and is not an empty directory" in error_msg:
-                        user_choice = show_retry_dialog(f"目标目录 '{target_dir}' 已存在且不为空。\n请选择一个空目录或不存在的目录进行下载。")
+                        user_choice = self.show_retry_dialog(f"目标目录 '{target_dir}' 已存在且不为空。\n请选择一个空目录或不存在的目录进行下载。", progress_window)
                     else:
-                        user_choice = show_retry_dialog(error_msg)
+                        user_choice = self.show_retry_dialog(error_msg, progress_window)
                     
                     if not user_choice:  # 用户选择取消
                         self.root.after(0, progress_window.destroy)
@@ -2066,7 +2429,7 @@ pause
                     # 如果用户选择重试，循环会继续
                         
             except Exception as e:
-                user_choice = show_retry_dialog(str(e))
+                user_choice = self.show_retry_dialog(str(e), progress_window)
                 
                 if not user_choice:  # 用户选择取消
                     self.root.after(0, progress_window.destroy)
@@ -2313,7 +2676,8 @@ pause
                     text=True,
                     cwd=project_path,
                     bufsize=1,
-                    universal_newlines=True
+                    universal_newlines=True,
+                    **self._get_subprocess_kwargs()
                 )
                 
                 # 实时读取输出
@@ -2788,12 +3152,25 @@ class LauncherDialog:
         if output_path:
             self.output_var.set(output_path)
             
+    def _get_subprocess_kwargs(self):
+        """获取 subprocess 调用的参数，在 Windows 上隐藏命令窗口"""
+        kwargs = {}
+        if sys.platform == 'win32':
+            # 使用 CREATE_NO_WINDOW 隐藏命令窗口
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            # 使用 STARTUPINFO 进一步确保窗口隐藏
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        return kwargs
+            
     def get_system_python_path(self):
         """获取系统Python路径"""
         try:
             # 尝试获取系统Python路径
             result = subprocess.run([sys.executable, "-c", "import sys; print(sys.executable)"], 
-                                  capture_output=True, text=True, timeout=5)
+                                  capture_output=True, text=True, timeout=5, **self._get_subprocess_kwargs())
             if result.returncode == 0:
                 return result.stdout.strip()
         except:
@@ -3325,6 +3702,19 @@ class DownloadDialog:
 class SwitchVersionDialog:
     """切换GitHub项目版本对话框"""
     
+    def _get_subprocess_kwargs(self):
+        """获取 subprocess 调用的参数，在 Windows 上隐藏命令窗口"""
+        kwargs = {}
+        if sys.platform == 'win32':
+            # 使用 CREATE_NO_WINDOW 隐藏命令窗口
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            # 使用 STARTUPINFO 进一步确保窗口隐藏
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        return kwargs
+    
     def __init__(self, parent, project_path):
         self.result = None
         self.project_path = project_path
@@ -3413,7 +3803,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 获取所有分支
-            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, check=True)
+            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, check=True, **self._get_subprocess_kwargs())
             branches_output = result.stdout.strip()
             
             # 解析分支信息
@@ -3435,7 +3825,7 @@ class SwitchVersionDialog:
                         self.branches.append((line, False))
             
             # 获取所有标签
-            result = subprocess.run(["git", "tag"], capture_output=True, text=True, check=True)
+            result = subprocess.run(["git", "tag"], capture_output=True, text=True, check=True, **self._get_subprocess_kwargs())
             tags_output = result.stdout.strip()
             self.tags = [tag.strip() for tag in tags_output.split('\n') if tag.strip()]
             
@@ -3532,7 +3922,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 执行git checkout命令
-            result = subprocess.run(["git", "checkout", branch_name], capture_output=True, text=True)
+            result = subprocess.run(["git", "checkout", branch_name], capture_output=True, text=True, **self._get_subprocess_kwargs())
             
             # 恢复原始工作目录
             os.chdir(original_cwd)
@@ -3558,7 +3948,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 执行git checkout命令
-            result = subprocess.run(["git", "checkout", tag_name], capture_output=True, text=True)
+            result = subprocess.run(["git", "checkout", tag_name], capture_output=True, text=True, **self._get_subprocess_kwargs())
             
             # 恢复原始工作目录
             os.chdir(original_cwd)
@@ -3587,6 +3977,23 @@ class PresetManager:
     def __init__(self, presets_file="presets.json"):
         self.presets_file = presets_file
         self.default_presets = {
+            "ai_essentials": {
+                "name": "AI基础必备",
+                "packages": [
+                    {"name": "numpy", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "pandas", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "torch", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "torchvision", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "transformers", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "diffusers", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "accelerate", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "pillow", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "opencv-python", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "scikit-learn", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "matplotlib", "version": "", "operator": "", "source": "pypi"},
+                    {"name": "requests", "version": "", "operator": "", "source": "pypi"}
+                ]
+            },
             "ai_art": {
                 "name": "AI绘画",
                 "packages": [
@@ -3718,6 +4125,10 @@ class PresetManager:
 
 
 def main():
+    # 防止多进程问题，Windows下打包exe时必须添加
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     # 如果支持拖放功能，则使用TkinterDnD创建根窗口
     if HAS_DND:
         root = tkinterdnd2.TkinterDnD.Tk()

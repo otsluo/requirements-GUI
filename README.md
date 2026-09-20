@@ -78,7 +78,7 @@ git clone https://github.com/otsluo/requirements-GUI.git
 ```
 ```bash
 # 加速镜像
-git clone https://gitcode.com/weixin_45738527/comfyui-xnantool.git
+git clone https://gitcode.com/weixin_45738527/requirements-GUI.git
 ```
 
 ## 使用方法

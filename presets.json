@@ -1,5 +1,88 @@
 {
     "presets": {
+        "ai_essentials": {
+            "name": "AI基础必备",
+            "packages": [
+                {
+                    "name": "numpy",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "pandas",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "torch",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "torchvision",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "transformers",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "diffusers",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "accelerate",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "pillow",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "opencv-python",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi"
+                },
+                {
+                    "name": "scikit-learn",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "matplotlib",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                },
+                {
+                    "name": "requests",
+                    "version": "",
+                    "operator": "",
+                    "source": "pypi",
+                    "description": ""
+                }
+            ]
+        },
         "ai_art": {
             "name": "AI绘画",
             "packages": [
