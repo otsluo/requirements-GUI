@@ -4,7 +4,7 @@ import subprocess
 import sys
 import os
 import json
-import venv
+import zipfile
 import shutil
 import threading
 from typing import List, Dict, Optional
@@ -42,7 +42,7 @@ class RequirementsManager:
             self.root = root
         
         # 设置窗口标题和尺寸
-        self.root.title("Requirements GUI-可视化管理工具 v0.5.4")
+        self.root.title("Requirements GUI-可视化管理工具 v0.6.0")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -1247,103 +1247,124 @@ class RequirementsManager:
             # 在新线程中执行创建虚拟环境的操作
             threading.Thread(target=self._create_venv_thread, args=(venv_dir,), daemon=True).start()
 
-    def _create_venv_thread(self, venv_dir):
-        """在后台线程中创建虚拟环境"""
+    def _create_venv_thread(self, venv_dir, is_embedded=False):
+        """在后台线程中创建虚拟环境（is_embedded为True时创建的是嵌入式环境）"""
+        env_type_name = "嵌入式环境" if is_embedded else "虚拟环境"
         try:
-            self.root.after(0, lambda: self.update_status(f"正在创建虚拟环境: {venv_dir}"))
-            self.root.after(0, lambda: self.append_debug_info(f"开始创建虚拟环境: {venv_dir}"))
+            self.root.after(0, lambda: self.update_status(f"正在创建{env_type_name}: {venv_dir}"))
+            self.root.after(0, lambda: self.append_debug_info(f"开始创建{env_type_name}: {venv_dir}"))
             
-            # 统一使用手动创建方式，避免弹出黑色命令窗口
-            self._create_venv_manually(venv_dir)
+            # 按各自的标准方式创建：虚拟环境用venv模块，嵌入式用embeddable标准布局
+            if is_embedded:
+                self._create_embed_standard(venv_dir)
+            else:
+                self._create_venv_standard(venv_dir)
             
-            self.root.after(0, lambda: setattr(self, 'current_venv', venv_dir))
-            self.root.after(0, lambda: self.venv_label.config(text=f"虚拟环境: {venv_dir}"))
-            self.root.after(0, lambda: self.append_debug_info(f"虚拟环境创建成功: {venv_dir}"))
-            self.root.after(0, lambda: self.update_status("虚拟环境创建成功"))
-            self.root.after(0, lambda: messagebox.showinfo("成功", f"虚拟环境创建成功: {venv_dir}"))
+            if is_embedded:
+                # 嵌入式环境：显示到嵌入式环境标签，并清空虚拟环境标签
+                self.root.after(0, lambda: setattr(self, 'current_venv', venv_dir))
+                self.root.after(0, lambda: self.venv_label.config(text=""))
+                self.root.after(0, lambda: self.embed_label.config(text=f"嵌入式环境: {venv_dir}"))
+            else:
+                # 普通虚拟环境：显示到虚拟环境标签，并清空嵌入式环境标签
+                self.root.after(0, lambda: setattr(self, 'current_venv', venv_dir))
+                self.root.after(0, lambda: self.embed_label.config(text=""))
+                self.root.after(0, lambda: self.venv_label.config(text=f"虚拟环境: {venv_dir}"))
+            self.root.after(0, lambda: self.append_debug_info(f"{env_type_name}创建成功: {venv_dir}"))
+            self.root.after(0, lambda: self.update_status(f"{env_type_name}创建成功"))
+            self.root.after(0, lambda: messagebox.showinfo("成功", f"{env_type_name}创建成功: {venv_dir}"))
             # 自动刷新包列表以显示新环境中的包
             self.root.after(0, lambda: self.refresh_packages())
         except Exception as e:
-            self.root.after(0, lambda msg=str(e): self.update_status(f"创建虚拟环境失败: {msg}"))
-            self.root.after(0, lambda msg=str(e): self.append_debug_info(f"创建虚拟环境失败: {msg}"))
-            self.root.after(0, lambda msg=str(e): messagebox.showerror("错误", f"虚拟环境创建失败: {msg}"))
+            self.root.after(0, lambda msg=str(e): self.update_status(f"创建{env_type_name}失败: {msg}"))
+            self.root.after(0, lambda msg=str(e): self.append_debug_info(f"创建{env_type_name}失败: {msg}"))
+            self.root.after(0, lambda msg=str(e): messagebox.showerror("错误", f"创建{env_type_name}失败: {msg}"))
     
-    def _create_venv_manually(self, venv_dir):
-        """手动创建虚拟环境"""
-        os.makedirs(os.path.join(venv_dir, 'Scripts'), exist_ok=True)
-        os.makedirs(os.path.join(venv_dir, 'Lib', 'site-packages'), exist_ok=True)
-        os.makedirs(os.path.join(venv_dir, 'Include'), exist_ok=True)
-        
-        # 使用统一的方法获取真正的Python解释器
+    def _create_venv_standard(self, venv_dir):
+        """以标准venv方式创建虚拟环境（轻量，依赖系统Python，不可整体拷走）"""
         real_python = self._get_system_python()
-        
         if not real_python:
             raise Exception("找不到系统中安装的Python解释器，请先安装Python再使用此功能")
         
+        self.root.after(0, lambda: self.append_debug_info(f"使用Python: {real_python}"))
+        
+        # 等价于命令行执行 python -m venv <目录>，会自动生成 pyvenv.cfg、
+        # Scripts/python.exe 并通过 ensurepip 安装 pip
+        # 显式指定系统Python，避免打包环境下误用自身exe
+        result = subprocess.run([real_python, '-m', 'venv', venv_dir],
+                                capture_output=True, text=True, timeout=300,
+                                **self._get_subprocess_kwargs())
+        if result.returncode != 0:
+            raise Exception(f"venv创建失败: {result.stderr.strip() or result.stdout.strip()}")
+    
+    def _create_embed_standard(self, venv_dir):
+        """以官方嵌入式（embeddable）标准布局创建环境（自包含，可整体拷走使用）"""
+        if sys.platform != 'win32':
+            raise Exception("标准嵌入式布局（embeddable）仅支持Windows平台")
+        
+        real_python = self._get_system_python()
+        if not real_python:
+            raise Exception("找不到系统中安装的Python解释器，请先安装Python再使用此功能")
         python_home = os.path.dirname(real_python)
-        version_info = sys.version_info
+        self.root.after(0, lambda: self.append_debug_info(f"使用Python: {real_python}"))
         
-        # 创建pyvenv.cfg配置文件
-        config_content = f"""home = {python_home}
-include-system-site-packages = false
-version = {version_info.major}.{version_info.minor}.{version_info.micro}
-"""
-        config_path = os.path.join(venv_dir, 'pyvenv.cfg')
-        with open(config_path, 'w') as f:
-            f.write(config_content)
+        # 查询目标Python版本号（如311），用于命名 pythonXXX.dll / pythonXXX.zip / pythonXXX._pth
+        ver_result = subprocess.run(
+            [real_python, '-c', 'import sys; print(f"{sys.version_info.major}{sys.version_info.minor}")'],
+            capture_output=True, text=True, timeout=30, **self._get_subprocess_kwargs())
+        if ver_result.returncode != 0:
+            raise Exception("无法获取目标Python版本号")
+        ver_tag = ver_result.stdout.strip()
         
-        # 复制python.exe到虚拟环境Scripts目录
-        src_python = real_python
-        dst_python = os.path.join(venv_dir, 'Scripts', 'python.exe')
-        shutil.copy2(src_python, dst_python)
+        os.makedirs(venv_dir, exist_ok=True)
         
-        # 复制pythonw.exe（如果存在）
-        src_pythonw = os.path.join(python_home, 'pythonw.exe')
-        if os.path.exists(src_pythonw):
-            dst_pythonw = os.path.join(venv_dir, 'Scripts', 'pythonw.exe')
-            shutil.copy2(src_pythonw, dst_pythonw)
+        # 1. 复制解释器可执行文件到根目录（官方嵌入式布局特征：python.exe在根目录而非Scripts）
+        for exe in ('python.exe', 'pythonw.exe'):
+            src = os.path.join(python_home, exe)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(venv_dir, exe))
         
-        # 复制DLLs目录
+        # 2. 复制根目录下的运行时DLL（python3.dll、pythonXXX.dll、vcruntime、libffi等）
+        for item in os.listdir(python_home):
+            if item.lower().endswith('.dll'):
+                shutil.copy2(os.path.join(python_home, item), os.path.join(venv_dir, item))
+        
+        # 3. 复制DLLs目录（pip需要的_ssl等扩展模块）
         src_dlls = os.path.join(python_home, 'DLLs')
         if os.path.exists(src_dlls):
-            dst_dlls = os.path.join(venv_dir, 'DLLs')
-            shutil.copytree(src_dlls, dst_dlls, dirs_exist_ok=True)
+            shutil.copytree(src_dlls, os.path.join(venv_dir, 'DLLs'), dirs_exist_ok=True)
         
-        # 复制Lib目录（排除site-packages）
+        # 4. 将Lib标准库压缩为 pythonXXX.zip（排除site-packages和缓存），与官方嵌入式包一致
+        self.root.after(0, lambda: self.append_debug_info(f"正在压缩标准库到 python{ver_tag}.zip ..."))
         src_lib = os.path.join(python_home, 'Lib')
-        if os.path.exists(src_lib):
-            dst_lib = os.path.join(venv_dir, 'Lib')
-            os.makedirs(dst_lib, exist_ok=True)
-            for item in os.listdir(src_lib):
-                src_item = os.path.join(src_lib, item)
-                dst_item = os.path.join(dst_lib, item)
-                if item != 'site-packages':
-                    if os.path.isdir(src_item):
-                        shutil.copytree(src_item, dst_item, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(src_item, dst_item)
+        zip_path = os.path.join(venv_dir, f'python{ver_tag}.zip')
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(src_lib):
+                # 排除第三方包目录和编译缓存
+                dirs[:] = [d for d in dirs if d not in ('site-packages', '__pycache__')]
+                for fname in files:
+                    if fname.endswith(('.pyc', '.pyo')):
+                        continue
+                    full = os.path.join(root, fname)
+                    zf.write(full, os.path.relpath(full, src_lib))
         
-        # 创建site-packages目录下的标准文件
-        site_packages = os.path.join(venv_dir, 'Lib', 'site-packages')
+        # 5. 创建site-packages目录（安装第三方包的落点）
+        os.makedirs(os.path.join(venv_dir, 'Lib', 'site-packages'), exist_ok=True)
         
-        # 创建easy-install.pth
-        with open(os.path.join(site_packages, 'easy-install.pth'), 'w') as f:
-            pass
+        # 6. 写入 pythonXXX._pth 路径控制文件（嵌入式布局核心：用.pth控制模块搜索路径，
+        #    并启用 import site 使 pip 可用）
+        pth_content = f"python{ver_tag}.zip\n.\nDLLs\nLib\\site-packages\nimport site\n"
+        with open(os.path.join(venv_dir, f'python{ver_tag}._pth'), 'w') as f:
+            f.write(pth_content)
         
-        # 创建setuptools.pth（如果系统有）
-        src_setuptools_pth = os.path.join(python_home, 'Lib', 'site-packages', 'setuptools.pth')
-        if os.path.exists(src_setuptools_pth):
-            shutil.copy2(src_setuptools_pth, os.path.join(site_packages, 'setuptools.pth'))
-        
-        # 安装pip（使用ensurepip）
-        try:
-            subprocess.run([dst_python, '-m', 'ensurepip', '--upgrade'], 
-                         capture_output=True, text=True, timeout=60, cwd=venv_dir, **self._get_subprocess_kwargs())
-        except:
-            # ensurepip可能不可用，尝试使用get-pip.py
-            pass
-        
-        self.root.after(0, lambda: self.append_debug_info(f"使用Python: {real_python}"))
+        # 7. 安装pip（我们打包的标准库zip中含ensurepip模块，可直接使用）
+        self.root.after(0, lambda: self.append_debug_info("正在安装pip..."))
+        dst_python = os.path.join(venv_dir, 'python.exe')
+        pip_result = subprocess.run([dst_python, '-m', 'ensurepip', '--upgrade'],
+                                    capture_output=True, text=True, timeout=300,
+                                    cwd=venv_dir, **self._get_subprocess_kwargs())
+        if pip_result.returncode != 0:
+            self.root.after(0, lambda: self.append_debug_info(f"pip安装失败（可稍后手动安装）: {pip_result.stderr.strip()}"))
     
     def _get_system_python(self):
         """获取系统中真正的Python解释器路径（打包环境下使用）"""
@@ -1530,7 +1551,7 @@ version = {version_info.major}.{version_info.minor}.{version_info.micro}
             venv_name = "embed_env"  # 嵌入式环境名称
             venv_dir = os.path.join(venv_path, venv_name)
             # 在新线程中执行创建嵌入式环境的操作
-            threading.Thread(target=self._create_venv_thread, args=(venv_dir,), daemon=True).start()
+            threading.Thread(target=self._create_venv_thread, args=(venv_dir, True), daemon=True).start()
 
     def select_venv(self):
         """选择虚拟环境"""
@@ -1539,6 +1560,7 @@ version = {version_info.major}.{version_info.minor}.{version_info.micro}
             # 检查是否为有效的虚拟环境
             if os.path.exists(os.path.join(venv_path, "pyvenv.cfg")):
                 self.current_venv = venv_path
+                self.embed_label.config(text="")  # 清空嵌入式环境标签
                 self.venv_label.config(text=f"虚拟环境: {venv_path}")
                 self.update_status(f"已选择虚拟环境: {venv_path}")
                 # 自动列出该环境中的已安装包
@@ -1550,22 +1572,24 @@ version = {version_info.major}.{version_info.minor}.{version_info.micro}
         """选择嵌入式环境"""
         venv_path = filedialog.askdirectory(title="选择嵌入式环境目录")
         if venv_path:
-            # 检查是否为有效的嵌入式环境
-            # 嵌入式环境可能没有pyvenv.cfg文件，但我们检查是否存在python可执行文件
-            python_exe = None
+            # 严格校验嵌入式环境（embeddable标准布局）特征：
+            # 1. 根目录存在python.exe（虚拟环境的python.exe在Scripts/bin子目录下）
+            # 2. 不存在pyvenv.cfg（存在则是虚拟环境，不允许从嵌入式入口选择）
             if sys.platform == "win32":
                 python_exe = os.path.join(venv_path, "python.exe")
             else:
                 python_exe = os.path.join(venv_path, "bin", "python")
+            is_embed = os.path.exists(python_exe) and not os.path.exists(os.path.join(venv_path, "pyvenv.cfg"))
                 
-            if os.path.exists(python_exe):
+            if is_embed:
                 self.current_venv = venv_path
+                self.venv_label.config(text="")  # 清空虚拟环境标签
                 self.embed_label.config(text=f"嵌入式环境: {venv_path}")
                 self.update_status(f"已选择嵌入式环境: {venv_path}")
                 # 自动列出该环境中的已安装包
                 self.list_installed()
             else:
-                messagebox.showwarning("警告", "选择的目录不是有效的嵌入式环境")
+                messagebox.showwarning("警告", "选择的目录不是有效的嵌入式环境（虚拟环境请使用'选择虚拟环境'按钮）")
 
     def detect_environment(self):
         """自动检测当前环境"""
@@ -1635,7 +1659,7 @@ version = {version_info.major}.{version_info.minor}.{version_info.micro}
             # 检查当前环境标签，判断是否为嵌入式环境
             current_text = self.embed_label.cget("text")
             if "嵌入式环境:" in current_text:
-                # 对于嵌入式环境，直接使用python -m pip
+                # 对于嵌入式环境，直接使用根目录的python -m pip（embeddable标准布局）
                 python_path = os.path.join(self.current_venv, "python.exe") if sys.platform == "win32" else os.path.join(self.current_venv, "bin", "python")
                 if os.path.exists(python_path):
                     cmd = [python_path, "-m", "pip"]
