@@ -42,7 +42,7 @@ class RequirementsManager:
             self.root = root
         
         # 设置窗口标题和尺寸
-        self.root.title("Requirements GUI-可视化管理工具 v0.6.0")
+        self.root.title("Requirements GUI-可视化管理工具 v0.6.1")
         self.root.geometry("1200x800")
         
         # 当前打开的requirements文件路径
@@ -195,23 +195,28 @@ class RequirementsManager:
         package_frame = ttk.LabelFrame(main_frame, text="包管理")
         package_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 工具栏
+        # 工具栏（分两行，避免窗口宽度不足时按钮被裁掉）
         toolbar_frame = ttk.Frame(package_frame)
         toolbar_frame.pack(fill=tk.X, pady=(0, 5))
+        toolbar_row1 = ttk.Frame(toolbar_frame)
+        toolbar_row1.pack(fill=tk.X, pady=(0, 2))
+        toolbar_row2 = ttk.Frame(toolbar_frame)
+        toolbar_row2.pack(fill=tk.X)
         
-        ttk.Button(toolbar_frame, text="添加包", command=self.add_package).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="删除选中", command=self.remove_package).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="全选", command=self.select_all).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="取消选择", command=self.deselect_all).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="刷新列表", command=self.refresh_packages).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="搜索包", command=self.search_package).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="安装选中", command=self.install_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="更新选中", command=self.update_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="降级选中", command=self.downgrade_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="卸载选中", command=self.uninstall_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="列出已安装", command=self.list_installed).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="保存已安装", command=self.save_installed_as_requirements).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar_frame, text="批量操作符", command=self.batch_operator).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="添加包", command=self.add_package).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="删除选中", command=self.remove_package).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="全选", command=self.select_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="取消选择", command=self.deselect_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="刷新列表", command=self.refresh_packages).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="搜索包", command=self.search_package).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row1, text="安装选中", command=self.install_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="更新选中", command=self.update_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="降级选中", command=self.downgrade_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="卸载选中", command=self.uninstall_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="列出已安装", command=self.list_installed).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="保存已安装", command=self.save_installed_as_requirements).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="批量操作符", command=self.batch_operator).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar_row2, text="冲突检测", command=self.check_conflicts).pack(side=tk.LEFT, padx=2)
         
         # 依赖包列表标题
         ttk.Label(package_frame, text="依赖包列表").pack(fill=tk.X, pady=(5, 2))
@@ -649,7 +654,7 @@ class RequirementsManager:
             try:
                 # 使用pip freeze命令获取已安装的包,这样会根据当前环境(系统或虚拟环境)正确获取
                 cmd = self.get_pip_command() + ["freeze"]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **self._get_subprocess_kwargs())
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30, **self._get_subprocess_kwargs())
                 
                 if result.returncode == 0:
                     # 解析pip freeze的输出
@@ -785,36 +790,267 @@ class RequirementsManager:
             if mirror_url:
                 cmd.extend(["-i", mirror_url])
             
-            self.root.after(0, lambda: self.append_debug_info(f"执行安装命令: {' '.join(cmd)}"))
-            self.root.after(0, lambda: self.append_debug_info("安装过程:"))
+            returncode, output = self._run_pip_command(cmd, "执行安装命令")
             
-            # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            # 检测源码构建失败（常见于新版Python缺少预编译wheel，且环境缺setuptools构建后端）
+            if returncode != 0 and self._is_build_backend_error(output):
+                self.root.after(0, lambda: self.append_debug_info("检测到构建后端缺失，正在自动安装 setuptools 和 wheel 后重试..."))
+                setup_cmd = self.get_pip_command() + ["install", "setuptools", "wheel"]
+                if mirror_url:
+                    setup_cmd.extend(["-i", mirror_url])
+                setup_code, _ = self._run_pip_command(setup_cmd, "执行补装命令")
+                if setup_code == 0:
+                    # 重试：使用 --no-build-isolation，让构建过程直接使用刚装好的setuptools
+                    retry_cmd = self.get_pip_command() + ["install", "--no-build-isolation"] + packages
+                    if mirror_url:
+                        retry_cmd.extend(["-i", mirror_url])
+                    returncode, output = self._run_pip_command(retry_cmd, "执行重试安装命令")
             
-            # 实时读取输出
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
-                    break
-                if output:
-                    self.root.after(0, lambda out=output: self.append_debug_info(out.strip()))
-            
-            # 等待进程结束
-            process.wait()
-            
-            if process.returncode == 0:
+            if returncode == 0:
                 self.root.after(0, lambda: self.update_status("包安装成功"))
                 self.root.after(0, lambda: self.append_debug_info("安装完成"))
-                self.root.after(0, lambda: messagebox.showinfo("成功", "包安装成功"))
                 self.root.after(0, lambda: self.refresh_packages())  # 刷新包列表以更新描述信息
             else:
                 self.root.after(0, lambda: self.update_status("包安装失败"))
-                self.root.after(0, lambda: self.append_debug_info(f"安装失败，返回码: {process.returncode}"))
+                self.root.after(0, lambda: self.append_debug_info(f"安装失败，返回码: {returncode}"))
                 self.root.after(0, lambda: messagebox.showerror("错误", "包安装失败，请查看调试窗口了解详情"))
+            
+            # 检测pip输出中的依赖冲突提示，询问用户是否一键修复
+            conflicts = self._parse_dependency_conflicts(output)
+            if conflicts:
+                self.root.after(0, lambda c=conflicts: self._prompt_fix_conflicts(c))
         except Exception as e:
             self.root.after(0, lambda: self.update_status(f"安装出错: {str(e)}"))
             self.root.after(0, lambda: self.append_debug_info(f"安装异常: {str(e)}"))
             self.root.after(0, lambda: messagebox.showerror("错误", f"安装过程中出现错误: {str(e)}"))
+
+    @staticmethod
+    def _parse_dependency_conflicts(outputs):
+        """解析pip输出中的依赖冲突行，返回冲突列表
+        兼容两种格式:
+        - pip install: 'datasets 4.4.1 requires pyarrow>=21.0.0, but you have pyarrow 20.0.0 which is incompatible.'
+        - pip check:   'videocaptioner 1.4.1 has requirement pillow>=12.0.0, but you have pillow 11.3.0.'
+        每项: {'requirer': 依赖方描述, 'requirement': 需求字符串(含包名+版本约束), 'installed': 已装版本}
+        """
+        import re
+        conflicts = []
+        seen = set()
+        # 需求字符串可含逗号（如 websockets<17.0,>=13.0.0），用非贪婪匹配直到 ", but you have"
+        # "which is incompatible" 仅出现在pip install输出中，pip check没有，故设为可选
+        pattern = re.compile(
+            r'(\S+)\s+(\S+)\s+(?:requires|has requirement)\s+([A-Za-z0-9._-]+.+?),\s*but you have\s+(\S+)\s+(\S+)(?:\s+which is incompatible)?',
+            re.IGNORECASE)
+        for line in outputs:
+            m = pattern.search(line)
+            if m:
+                requirer_name, requirer_ver, requirement, installed_name, installed = m.groups()
+                key = requirement.lower()
+                if key not in seen:
+                    seen.add(key)
+                    conflicts.append({
+                        'requirer': f"{requirer_name} {requirer_ver}",
+                        'requirement': requirement,
+                        'installed': installed.rstrip('.'),  # pip check行尾的句号不算版本号
+                    })
+        return conflicts
+
+    def _prompt_fix_conflicts(self, conflicts):
+        """弹出可勾选的冲突列表对话框，用户选择要修复哪些冲突"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("依赖冲突")
+        dialog.geometry("560x420")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        ttk.Label(dialog, text="检测到以下依赖冲突，勾选需要修复的项：", font=("", 10, "bold")).pack(anchor=tk.W, padx=10, pady=(10, 5))
+        
+        # 冲突列表（带复选框，默认全部勾选）
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10)
+        
+        canvas = tk.Canvas(list_frame, borderwidth=1, relief=tk.SOLID)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=canvas.yview)
+        check_frame = ttk.Frame(canvas)
+        check_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=check_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        check_vars = []
+        for i, c in enumerate(conflicts):
+            var = tk.BooleanVar(master=dialog, value=True)
+            text = f"{c['requirer']} 需要 {c['requirement']}（当前: {c['installed']}）"
+            ttk.Checkbutton(check_frame, text=text, variable=var).pack(anchor=tk.W, pady=2)
+            check_vars.append((var, c))
+        
+        # 全选/全不选
+        def toggle_all(value):
+            for var, _ in check_vars:
+                var.set(value)
+        
+        sel_frame = ttk.Frame(dialog)
+        sel_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Button(sel_frame, text="全选", command=lambda: toggle_all(True), width=8).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(sel_frame, text="全不选", command=lambda: toggle_all(False), width=8).pack(side=tk.LEFT)
+        
+        # 操作按钮
+        def on_fix():
+            selected = [c for var, c in check_vars if var.get()]
+            if not selected:
+                messagebox.showwarning("提示", "请至少勾选一个要修复的冲突", parent=dialog)
+                return
+            dialog.destroy()
+            import threading
+            threading.Thread(target=self._fix_conflicts_thread, args=(selected,), daemon=True).start()
+        
+        def on_ignore():
+            dialog.destroy()
+            self.root.after(0, lambda: self.update_status("已忽略依赖冲突"))
+        
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
+        ttk.Button(button_frame, text="修复选中项", command=on_fix).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(button_frame, text="忽略", command=on_ignore).pack(side=tk.RIGHT)
+        
+        dialog.wait_window()
+
+    def _fix_conflicts_thread(self, conflicts):
+        """后台线程执行依赖冲突一键修复"""
+        try:
+            env_name = self.embed_label.cget("text") or self.venv_label.cget("text")
+            if not self.current_venv:
+                env_name = "系统Python环境"
+            self.root.after(0, lambda n=env_name: self.append_debug_info(f"修复目标环境: {n}"))
+            # 按目标包名合并版本约束，避免重复安装同一个包
+            # 例如 pyarrow>=21.0.0 与 pyarrow<22 合并为 pyarrow>=21.0.0,<22
+            import re
+            merged = {}
+            order = []
+            for c in conflicts:
+                req = c['requirement'].strip()
+                m = re.match(r'([A-Za-z0-9._-]+)(.*)', req)
+                if not m:
+                    continue
+                name, spec = m.group(1), m.group(2).strip()
+                key = name.lower().replace('_', '-')
+                if key not in merged:
+                    merged[key] = {'name': name, 'specs': set()}
+                    order.append(key)
+                if spec:
+                    # 拆分逗号分隔的多个约束
+                    for s in spec.split(','):
+                        s = s.strip()
+                        if s:
+                            merged[key]['specs'].add(s)
+            
+            install_args = []
+            for key in order:
+                item = merged[key]
+                req_str = item['name'] + (",".join(sorted(item['specs'])) if item['specs'] else "")
+                install_args.append(req_str)
+            
+            if not install_args:
+                self.root.after(0, lambda: messagebox.showinfo("提示", "未能解析出可修复的依赖约束"))
+                return
+            
+            self.root.after(0, lambda: self.update_status("正在修复依赖冲突..."))
+            self.root.after(0, lambda: self.append_debug_info(f"修复安装目标: {', '.join(install_args)}"))
+            
+            cmd = self.get_pip_command() + ["install"] + install_args
+            mirror_url = self.mirror_sources.get(self.current_mirror, "")
+            if mirror_url:
+                cmd.extend(["-i", mirror_url])
+            
+            returncode, output = self._run_pip_command(cmd, "执行修复命令")
+            
+            if returncode != 0:
+                # 约束之间可能互相矛盾（如一个包要求>=21另一个要求<20），pip会解析失败
+                self.root.after(0, lambda: self.update_status("依赖冲突修复失败"))
+                self.root.after(0, lambda: messagebox.showerror("错误", "自动修复失败：可能存在互相矛盾的版本约束，请查看调试窗口手动处理"))
+                return
+            
+            # 修复完成后运行 pip check 验证结果
+            self.root.after(0, lambda: self.append_debug_info("修复完成，正在验证依赖关系..."))
+            check_cmd = self.get_pip_command() + ["check"]
+            check_code, check_output = self._run_pip_command(check_cmd, "执行验证命令")
+            
+            remaining = self._parse_dependency_conflicts(check_output)
+            if check_code == 0 and not remaining:
+                self.root.after(0, lambda: self.update_status("依赖冲突修复成功"))
+                self.root.after(0, lambda: messagebox.showinfo("成功", "依赖冲突已全部修复"))
+            else:
+                detail = "\n".join(f"• {c['requirement']}" for c in remaining[:10]) if remaining else "请查看调试窗口"
+                self.root.after(0, lambda: self.update_status("部分冲突已修复"))
+                self.root.after(0, lambda d=detail: messagebox.showwarning("部分修复", f"仍有未解决的冲突:\n{d}"))
+            self.root.after(0, lambda: self.refresh_packages())
+        except Exception as e:
+            self.root.after(0, lambda: self.update_status(f"修复出错: {str(e)}"))
+            self.root.after(0, lambda: messagebox.showerror("错误", f"修复依赖冲突时出错: {str(e)}"))
+
+    def check_conflicts(self):
+        """手动检测当前环境的依赖冲突（pip check）
+        未选择虚拟/嵌入式环境时，检测系统Python环境"""
+        import threading
+        threading.Thread(target=self._check_conflicts_thread, daemon=True).start()
+
+    def _check_conflicts_thread(self):
+        """后台线程执行依赖冲突检测"""
+        try:
+            if self.current_venv:
+                env_desc = self.embed_label.cget("text") or self.venv_label.cget("text")
+            else:
+                env_desc = "系统Python环境"
+            self.root.after(0, lambda e=env_desc: self.append_debug_info(f"检测目标环境: {e}"))
+            self.root.after(0, lambda: self.update_status("正在检测依赖冲突..."))
+            cmd = self.get_pip_command() + ["check"]
+            returncode, output = self._run_pip_command(cmd, "执行检测命令")
+            
+            conflicts = self._parse_dependency_conflicts(output)
+            if returncode == 0 and not conflicts:
+                self.root.after(0, lambda: self.update_status("未检测到依赖冲突"))
+                self.root.after(0, lambda: messagebox.showinfo("检测完成", "当前环境依赖关系正常，未检测到冲突"))
+            elif conflicts:
+                self.root.after(0, lambda: self.update_status(f"检测到 {len(conflicts)} 个依赖冲突"))
+                self.root.after(0, lambda c=conflicts: self._prompt_fix_conflicts(c))
+            else:
+                # pip check报错但未能解析出标准格式的冲突行，展示原始输出避免空对话框
+                raw = "\n".join(line.strip() for line in output if line.strip())[:800]
+                self.root.after(0, lambda: self.update_status("检测到异常但无法解析冲突详情"))
+                self.root.after(0, lambda r=raw: messagebox.showwarning("检测完成", f"pip check报告了问题，但输出格式无法自动解析:\n\n{r}\n\n完整内容请查看调试窗口"))
+        except Exception as e:
+            self.root.after(0, lambda: self.update_status(f"检测出错: {str(e)}"))
+            self.root.after(0, lambda: messagebox.showerror("错误", f"依赖冲突检测出错: {str(e)}"))
+
+    def _run_pip_command(self, cmd, log_prefix):
+        """执行pip命令并实时输出日志，返回(返回码, 输出内容列表)"""
+        self.root.after(0, lambda: self.append_debug_info(f"{log_prefix}: {' '.join(cmd)}"))
+        self.root.after(0, lambda: self.append_debug_info("安装过程:"))
+        
+        # 使用Popen来实时获取输出
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
+        
+        # 实时读取输出
+        outputs = []
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                outputs.append(output)
+                self.root.after(0, lambda out=output: self.append_debug_info(out.strip()))
+        
+        # 等待进程结束
+        process.wait()
+        return process.returncode, outputs
+
+    @staticmethod
+    def _is_build_backend_error(outputs):
+        """判断pip输出是否为源码构建后端缺失错误（如缺少setuptools）"""
+        text = "".join(outputs).lower()
+        return ("no module named 'setuptools'" in text
+                or "backend-unavailable" in text
+                or "cannot import build backend" in text)
             
     def update_selected(self):
         """更新选中的包"""
@@ -912,7 +1148,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("更新过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -973,7 +1209,7 @@ class RequirementsManager:
             self.root.after(0, lambda: self.append_debug_info("降级过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -1028,17 +1264,13 @@ class RequirementsManager:
         try:
             self.root.after(0, lambda: self.update_status(f"正在卸载包: {', '.join(packages)}"))
             cmd = self.get_pip_command() + ["uninstall", "-y"] + packages
-            
-            # 添加镜像源参数到正确位置（在uninstall之后）
-            mirror_url = self.mirror_sources.get(self.current_mirror, "")
-            if mirror_url:
-                cmd.extend(["-i", mirror_url])
+            # 注意：pip uninstall 不支持 -i 镜像源参数（无需联网下载），不能附加
             
             self.root.after(0, lambda: self.append_debug_info(f"执行卸载命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("卸载过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             while True:
@@ -1073,17 +1305,13 @@ class RequirementsManager:
         try:
             self.root.after(0, lambda: self.update_status("正在生成requirements文件..."))
             cmd = self.get_pip_command() + ["freeze"]
-            
-            # 添加镜像源参数到正确位置（在freeze之后）
-            mirror_url = self.mirror_sources.get(self.current_mirror, "")
-            if mirror_url:
-                cmd.extend(["-i", mirror_url])
+            # 注意：pip freeze 不支持 -i 镜像源参数（无需联网下载），不能附加
             
             self.root.after(0, lambda: self.append_debug_info(f"执行生成requirements命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("生成过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             output_lines = []
@@ -1292,7 +1520,7 @@ class RequirementsManager:
         # Scripts/python.exe 并通过 ensurepip 安装 pip
         # 显式指定系统Python，避免打包环境下误用自身exe
         result = subprocess.run([real_python, '-m', 'venv', venv_dir],
-                                capture_output=True, text=True, timeout=300,
+                                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300,
                                 **self._get_subprocess_kwargs())
         if result.returncode != 0:
             raise Exception(f"venv创建失败: {result.stderr.strip() or result.stdout.strip()}")
@@ -1311,7 +1539,7 @@ class RequirementsManager:
         # 查询目标Python版本号（如311），用于命名 pythonXXX.dll / pythonXXX.zip / pythonXXX._pth
         ver_result = subprocess.run(
             [real_python, '-c', 'import sys; print(f"{sys.version_info.major}{sys.version_info.minor}")'],
-            capture_output=True, text=True, timeout=30, **self._get_subprocess_kwargs())
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30, **self._get_subprocess_kwargs())
         if ver_result.returncode != 0:
             raise Exception("无法获取目标Python版本号")
         ver_tag = ver_result.stdout.strip()
@@ -1361,7 +1589,7 @@ class RequirementsManager:
         self.root.after(0, lambda: self.append_debug_info("正在安装pip..."))
         dst_python = os.path.join(venv_dir, 'python.exe')
         pip_result = subprocess.run([dst_python, '-m', 'ensurepip', '--upgrade'],
-                                    capture_output=True, text=True, timeout=300,
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300,
                                     cwd=venv_dir, **self._get_subprocess_kwargs())
         if pip_result.returncode != 0:
             self.root.after(0, lambda: self.append_debug_info(f"pip安装失败（可稍后手动安装）: {pip_result.stderr.strip()}"))
@@ -1928,17 +2156,13 @@ class RequirementsManager:
             # 使用after方法在主线程中更新UI
             self.root.after(0, lambda: self.update_status("正在获取已安装的包列表..."))
             cmd = self.get_pip_command() + ["list"]
-            
-            # 添加镜像源参数到正确位置（在list之后）
-            mirror_url = self.mirror_sources.get(self.current_mirror, "")
-            if mirror_url:
-                cmd.extend(["-i", mirror_url])
+            # 注意：pip list 不支持 -i 镜像源参数（无需联网下载），不能附加
             
             self.root.after(0, lambda: self.append_debug_info(f"执行列出已安装包命令: {' '.join(cmd)}"))
             self.root.after(0, lambda: self.append_debug_info("列出过程:"))
             
             # 使用Popen来实时获取输出
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **self._get_subprocess_kwargs())
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, **self._get_subprocess_kwargs())
             
             # 实时读取输出
             output_lines = []
@@ -2142,6 +2366,7 @@ class RequirementsManager:
                 env_type = result['env_type']
                 system_python_path = result['system_python_path']
                 venv_path = result['venv_path']
+                embed_path = result.get('embed_path', '')
                 args = result['args']
                 output_file = result['output_file']
                 
@@ -2174,6 +2399,26 @@ class RequirementsManager:
                         python_relative = python_path
                     
                     # 生成虚拟环境启动脚本（简化版）
+                    bat_content = f'''@echo off
+"{python_relative}" "{py_file_relative}"{args_str}
+pause
+'''
+                elif env_type == "embed" and embed_path:
+                    # 使用嵌入式环境（python.exe位于环境根目录）
+                    python_path = os.path.join(embed_path, "python.exe")
+                    if not os.path.exists(python_path):
+                        # 尝试Linux/Mac路径
+                        python_path = os.path.join(embed_path, "bin", "python")
+                    
+                    # 获取嵌入式环境的相对路径
+                    try:
+                        output_dir = os.path.dirname(os.path.abspath(output_file))
+                        embed_relative = os.path.relpath(embed_path, output_dir)
+                        python_relative = os.path.join(embed_relative, os.path.basename(python_path))
+                    except:
+                        python_relative = python_path
+                    
+                    # 生成嵌入式环境启动脚本（简化版）
                     bat_content = f'''@echo off
 "{python_relative}" "{py_file_relative}"{args_str}
 pause
@@ -3007,8 +3252,8 @@ class LauncherDialog:
         
         self.top = tk.Toplevel(parent)
         self.top.title("创建启动器")
-        self.top.geometry("500x300")  # 增加窗口高度
-        self.top.minsize(500, 300)    # 设置最小尺寸
+        self.top.geometry("500x330")  # 增加窗口高度
+        self.top.minsize(500, 330)    # 设置最小尺寸
         self.top.transient(parent)
         self.top.grab_set()
         
@@ -3038,6 +3283,7 @@ class LauncherDialog:
         
         ttk.Radiobutton(env_frame, text="系统Python", variable=self.env_var, value="system").pack(side=tk.LEFT)
         ttk.Radiobutton(env_frame, text="虚拟环境", variable=self.env_var, value="venv").pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Radiobutton(env_frame, text="嵌入式环境", variable=self.env_var, value="embed").pack(side=tk.LEFT, padx=(10, 0))
         
         # 系统Python路径（默认隐藏）
         self.system_frame = ttk.Frame(frame)
@@ -3068,22 +3314,47 @@ class LauncherDialog:
         
         ttk.Button(venv_entry_frame, text="浏览", command=self.browse_venv).pack(side=tk.LEFT, padx=(5, 0))
         
+        # 嵌入式环境路径（默认隐藏）
+        self.embed_frame = ttk.Frame(frame)
+        self.embed_frame.grid(row=4, column=1, sticky=tk.EW, pady=5)
+        self.embed_frame.grid_remove()  # 默认隐藏
+        
+        self.embed_var = tk.StringVar()
+        embed_entry_frame = ttk.Frame(self.embed_frame)
+        embed_entry_frame.pack(fill=tk.X)
+        
+        self.embed_entry = ttk.Entry(embed_entry_frame, textvariable=self.embed_var, width=40)
+        self.embed_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Button(embed_entry_frame, text="浏览", command=self.browse_embed).pack(side=tk.LEFT, padx=(5, 0))
+        
         # 如果主程序中有已选择的虚拟环境，则自动填充
         if self.main_app and self.main_app.current_venv:
-            self.venv_var.set(self.main_app.current_venv)
-            # 如果已选择虚拟环境，默认选择虚拟环境选项
-            self.env_var.set("venv")
-            self.venv_frame.grid()
-            self.system_frame.grid_remove()
+            # 根据主程序当前选择的类型（嵌入式/虚拟环境）自动填充对应选项
+            embed_selected = False
+            if hasattr(self.main_app, 'embed_label') and "嵌入式环境:" in self.main_app.embed_label.cget("text"):
+                embed_selected = True
+            if embed_selected:
+                self.embed_var.set(self.main_app.current_venv)
+                self.env_var.set("embed")
+                self.embed_frame.grid()
+                self.system_frame.grid_remove()
+                self.venv_frame.grid_remove()
+            else:
+                self.venv_var.set(self.main_app.current_venv)
+                self.env_var.set("venv")
+                self.venv_frame.grid()
+                self.system_frame.grid_remove()
+                self.embed_frame.grid_remove()
         else:
             # 自动填充系统Python路径
             self.system_python_var.set(self.get_system_python_path())
         
         # 参数设置
-        ttk.Label(frame, text="参数设置:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame, text="参数设置:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.args_var = tk.StringVar()
         args_frame = ttk.Frame(frame)
-        args_frame.grid(row=4, column=1, sticky=tk.EW, pady=5)
+        args_frame.grid(row=5, column=1, sticky=tk.EW, pady=5)
         
         self.args_entry = ttk.Entry(args_frame, textvariable=self.args_var, width=40)
         self.args_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -3092,10 +3363,10 @@ class LauncherDialog:
         self.env_var.trace('w', self.on_env_change)
         
         # 保存位置
-        ttk.Label(frame, text="保存位置:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame, text="保存位置:").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.output_var = tk.StringVar()
         output_frame = ttk.Frame(frame)
-        output_frame.grid(row=5, column=1, sticky=tk.EW, pady=5)
+        output_frame.grid(row=6, column=1, sticky=tk.EW, pady=5)
         
         self.output_entry = ttk.Entry(output_frame, textvariable=self.output_var, width=40)
         self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -3104,7 +3375,7 @@ class LauncherDialog:
         
         # 按钮
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        button_frame.grid(row=7, column=0, columnspan=2, pady=20)
         
         ttk.Button(button_frame, text="创建", command=self.ok).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="取消", command=self.cancel).pack(side=tk.LEFT, padx=10)
@@ -3115,6 +3386,7 @@ class LauncherDialog:
         env_frame.columnconfigure(0, weight=1)
         system_entry_frame.columnconfigure(0, weight=1)
         venv_entry_frame.columnconfigure(0, weight=1)
+        embed_entry_frame.columnconfigure(0, weight=1)
         args_frame.columnconfigure(0, weight=1)
         output_frame.columnconfigure(0, weight=1)
         
@@ -3127,11 +3399,18 @@ class LauncherDialog:
         
     def on_env_change(self, *args):
         """环境选择变化时的处理"""
-        if self.env_var.get() == "venv":
+        env = self.env_var.get()
+        if env == "venv":
             self.venv_frame.grid()
+            self.embed_frame.grid_remove()
+            self.system_frame.grid_remove()
+        elif env == "embed":
+            self.embed_frame.grid()
+            self.venv_frame.grid_remove()
             self.system_frame.grid_remove()
         else:
             self.venv_frame.grid_remove()
+            self.embed_frame.grid_remove()
             self.system_frame.grid()
             
             # 自动获取系统Python路径
@@ -3165,6 +3444,12 @@ class LauncherDialog:
         venv_path = filedialog.askdirectory(title="选择虚拟环境目录")
         if venv_path:
             self.venv_var.set(venv_path)
+
+    def browse_embed(self):
+        """浏览嵌入式环境目录"""
+        embed_path = filedialog.askdirectory(title="选择嵌入式环境目录")
+        if embed_path:
+            self.embed_var.set(embed_path)
             
     def browse_output(self):
         """浏览输出文件"""
@@ -3194,7 +3479,7 @@ class LauncherDialog:
         try:
             # 尝试获取系统Python路径
             result = subprocess.run([sys.executable, "-c", "import sys; print(sys.executable)"], 
-                                  capture_output=True, text=True, timeout=5, **self._get_subprocess_kwargs())
+                                  capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5, **self._get_subprocess_kwargs())
             if result.returncode == 0:
                 return result.stdout.strip()
         except:
@@ -3222,6 +3507,7 @@ class LauncherDialog:
         env_type = self.env_var.get()
         system_python_path = self.system_python_var.get().strip() if env_type == "system" else ""
         venv_path = self.venv_var.get().strip() if env_type == "venv" else ""
+        embed_path = self.embed_var.get().strip() if env_type == "embed" else ""
         args = self.args_var.get().strip()
         
         if env_type == "system" and not system_python_path:
@@ -3235,12 +3521,30 @@ class LauncherDialog:
         if env_type == "venv" and not os.path.exists(venv_path):
             messagebox.showwarning("警告", "选择的虚拟环境目录不存在")
             return
+
+        if env_type == "embed" and not embed_path:
+            messagebox.showwarning("警告", "请选择嵌入式环境目录")
+            return
+
+        if env_type == "embed":
+            if not os.path.exists(embed_path):
+                messagebox.showwarning("警告", "选择的嵌入式环境目录不存在")
+                return
+            # 校验是否为有效的嵌入式环境（根目录存在python可执行文件）
+            if sys.platform == "win32":
+                embed_python = os.path.join(embed_path, "python.exe")
+            else:
+                embed_python = os.path.join(embed_path, "bin", "python")
+            if not os.path.exists(embed_python):
+                messagebox.showwarning("警告", "选择的目录不是有效的嵌入式环境（根目录未找到python可执行文件）")
+                return
             
         self.result = {
             'py_file': py_file,
             'env_type': env_type,
             'system_python_path': system_python_path,
             'venv_path': venv_path,
+            'embed_path': embed_path,
             'args': args,
             'output_file': output_file
         }
@@ -3827,7 +4131,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 获取所有分支
-            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, check=True, **self._get_subprocess_kwargs())
+            result = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, **self._get_subprocess_kwargs())
             branches_output = result.stdout.strip()
             
             # 解析分支信息
@@ -3849,7 +4153,7 @@ class SwitchVersionDialog:
                         self.branches.append((line, False))
             
             # 获取所有标签
-            result = subprocess.run(["git", "tag"], capture_output=True, text=True, check=True, **self._get_subprocess_kwargs())
+            result = subprocess.run(["git", "tag"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, **self._get_subprocess_kwargs())
             tags_output = result.stdout.strip()
             self.tags = [tag.strip() for tag in tags_output.split('\n') if tag.strip()]
             
@@ -3946,7 +4250,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 执行git checkout命令
-            result = subprocess.run(["git", "checkout", branch_name], capture_output=True, text=True, **self._get_subprocess_kwargs())
+            result = subprocess.run(["git", "checkout", branch_name], capture_output=True, text=True, encoding='utf-8', errors='replace', **self._get_subprocess_kwargs())
             
             # 恢复原始工作目录
             os.chdir(original_cwd)
@@ -3972,7 +4276,7 @@ class SwitchVersionDialog:
             os.chdir(self.project_path)
             
             # 执行git checkout命令
-            result = subprocess.run(["git", "checkout", tag_name], capture_output=True, text=True, **self._get_subprocess_kwargs())
+            result = subprocess.run(["git", "checkout", tag_name], capture_output=True, text=True, encoding='utf-8', errors='replace', **self._get_subprocess_kwargs())
             
             # 恢复原始工作目录
             os.chdir(original_cwd)
